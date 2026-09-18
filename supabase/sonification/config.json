@@ -1,0 +1,91 @@
+{
+  "$schema": "../../src/parser/StudyConfigSchema.json",
+  "studyMetadata": {
+    "title": "Perception of different audio stimuli",
+    "version": "pilot",
+    "authors": [
+      "Abhraneel Sarma"
+    ],
+    "date": "2026-02-08",
+    "description": "A perceptual study of different data sonification encodings.",
+    "organizations": [
+      "Graz University of Technology"
+    ]
+  },
+  "uiConfig": {
+    "contactEmail": "asarma@tugraz.at",
+    "helpTextPath": "sonification/assets/help.md",
+    "logoPath": "revisitAssets/revisitLogoSquare.svg",
+    "withProgressBar": true,
+    "autoDownloadStudy": false,
+    "withSidebar": true,
+    "urlParticipantIdParam": "PROLIFIC_PID",
+    "participantNameField": "introduction.prolificId",
+    "studyEndMsg": "Thank you for completing the study! Please wait while we automatically redirect you to Prolific. Or you can click on this [link](https://app.prolific.com/submissions/complete?cc=C1PEMLO4)",
+    "studyEndAutoRedirectURL": "https://app.prolific.com/submissions/complete?cc=C1PEMLO4",
+    "studyEndAutoRedirectDelay": 10000
+  },
+  "factors": {
+    "mapping": ["pitch", "tapping", "duration"],
+    "prop": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+  },
+  "baseComponents": {
+    "test": {
+      "type": "react-component",
+      "path": "sonification/assets/trial.tsx",
+      "parameters": {
+        "taskid": "test"
+      },
+      "stylesheetPath": "sonification/assets/task.css",
+      "helpTextPath": "sonification/assets/help-.md",
+      "response": [
+        {
+          "id": "test",
+          "prompt": "",
+          "required": true,
+          "type": "buttons",
+          "options": ["false", "true"],
+          "location": "belowStimulus",
+          "hidden": true
+        }
+      ],
+      "correctAnswer": [
+        {
+          "id": "test",
+          "answer": true
+        }
+      ]
+    }
+  },
+  "components": {
+    "introduction": {
+      "type": "markdown",
+      "path": "sonification/assets/00-intro.md",
+      "response": [
+        {
+          "id": "prolificId",
+          "prompt": "Prolific ID:",
+          "required": false,
+          "location": "belowStimulus",
+          "type": "shortText",
+          "paramCapture": "PROLIFIC_PID",
+          "placeholder": "Prolific ID"
+        }
+      ]
+    }
+  },
+  "betweenSubjects": ["mapping"],
+  "sequence": {
+    "order": "fixed",
+    "components": [
+      "introduction",
+      {
+        "type": "factor",
+        "id": "test",
+        "factor": "prop",
+        "order": "random",
+        "components": "test"
+      }
+    ]
+  }
+}
