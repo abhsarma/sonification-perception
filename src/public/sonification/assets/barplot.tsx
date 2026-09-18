@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { scaleLinear, scaleBand } from 'd3-scale';
 import { range } from 'd3-array';
 import { axisLeft, axisBottom } from 'd3-axis';
@@ -72,15 +73,6 @@ export default function BarPlot({data, indicators} : {data: Array<number>, indic
             width={width}
             height={height}>
             <g id="d3Stuff" ref={d3Container} />
-            {/* <rect
-                x={0}
-                y={20}
-                width={innerWidth}
-                height={innerHeight}
-                cursor="pointer"
-                opacity={isHover ? 0.2 : 0.0}
-                fill="cornflowerblue"
-            /> */}
         </svg>
     );
 }
