@@ -7,7 +7,7 @@ import AudioPlot from './sonification';
 import { StimulusParams } from '../../../store/types';
 import { useNextStep } from '../../../store/hooks/useNextStep';
 
-export default function Task({setAnswer, answers, parameters}: StimulusParams<{ taskid: string, r1: number; r2: number, vis: string, index: number}>) {
+export default function Task({parameters}: StimulusParams<{ prop: number }>) {
     // const [result, setResult] = useState<string | null>(null);
 
     const trialIndex = 1;
