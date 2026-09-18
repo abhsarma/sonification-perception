@@ -1,0 +1,39 @@
+name: delete preview on PR close
+on:
+  pull_request:
+    types: [closed]
+
+concurrency:
+  group: pages-deployment
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  delete_preview:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+          path: .pages
+          fetch-depth: 1
+
+      - name: make empty snapshot directory
+        run: mkdir empty-pages
+
+      - name: delete preview from current-only snapshot
+        run: .github/scripts/publish-pages-snapshot.sh ./empty-pages "PR${{ github.event.number }}" ./.pages
+
+      - name: Comment on PR
+        uses: hasura/comment-progress@v2.3.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          number: ${{ github.event.number }}
+          id: deploy-preview
+          message: "🪓 PR closed, deleted preview."

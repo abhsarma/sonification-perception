@@ -1,0 +1,393 @@
+import {
+  ActionIcon, AppShell, Button, Flex, Menu,
+} from '@mantine/core';
+import { Outlet } from 'react-router';
+import {
+  useCallback, useEffect, useMemo, useRef,
+  useState,
+} from 'react';
+import type { CSSProperties } from 'react';
+import debounce from 'lodash.debounce';
+import { IconArrowLeft, IconDotsVertical } from '@tabler/icons-react';
+import { AppAside } from './interface/AppAside';
+import { AppHeader } from './interface/AppHeader';
+import { AppNavBar } from './interface/AppNavBar';
+import { HelpModal } from './interface/HelpModal';
+import { AlertModal } from './interface/AlertModal';
+import { ConfigVersionWarningModal } from './interface/ConfigVersionWarningModal';
+import { EventType } from '../store/types';
+import { useStudyConfig } from '../store/hooks/useStudyConfig';
+import { WindowEventsContext } from '../store/hooks/useWindowEvents';
+import { useStoreSelector, useStoreDispatch, useStoreActions } from '../store/store';
+import { AnalysisFooter } from './interface/AnalysisFooter';
+import { useIsAnalysis } from '../store/hooks/useIsAnalysis';
+import { studyComponentToIndividualComponent } from '../utils/handleComponentInheritance';
+import { useCurrentComponent } from '../routes/utils';
+import { useFetchStylesheet } from '../utils/fetchStylesheet';
+import { RecordingContext, useRecording } from '../store/hooks/useRecording';
+import { ScreenRecordingRejection } from './interface/ScreenRecordingRejection';
+import { ReplayContext, useReplay } from '../store/hooks/useReplay';
+import { DeviceWarning } from './interface/DeviceWarning';
+import { handleBeforeUnload, shouldConfirmTabClose } from '../utils/closeTabConfirmation';
+import { useStorageEngine } from '../storage/storageEngineHooks';
+import {
+  buildPdfFilename, getPdfExportUnsupportedReason, saveElementAsPdf, waitForNextPaint,
+} from '../utils/pdfExport';
+import { hideNotification, showNotification } from '../utils/notifications';
+import { PdfExportMenuItem } from './interface/PdfExportMenuItem';
+import { PREFIX } from '../utils/Prefix';
+
+const STUDY_BROWSER_WIDTH = 360;
+
+export function StepRenderer() {
+  const windowEvents = useRef<EventType[]>([]);
+  const dispatch = useStoreDispatch();
+  const { toggleStudyBrowser, setAlertModal } = useStoreActions();
+  const { storageEngine } = useStorageEngine();
+
+  const isAnalysis = useIsAnalysis();
+  const studyConfig = useStudyConfig();
+  const currentComponent = useCurrentComponent();
+
+  const componentConfig = useMemo(() => studyComponentToIndividualComponent(studyConfig.components[currentComponent] || {}, studyConfig), [currentComponent, studyConfig]);
+
+  const windowEventDebounceTime = useMemo(() => componentConfig.windowEventDebounceTime ?? studyConfig.uiConfig.windowEventDebounceTime ?? 100, [componentConfig, studyConfig]);
+
+  useFetchStylesheet(studyConfig?.uiConfig.stylesheetPath);
+
+  const showStudyBrowser = useStoreSelector((state) => state.showStudyBrowser);
+  const modes = useStoreSelector((state) => state.modes);
+  const isCompleted = useStoreSelector((state) => state.completed);
+  const isSubmittingFinal = useStoreSelector((state) => state.isSubmittingFinal);
+
+  const screenRecording = useRecording();
+  const replay = useReplay();
+
+  const { isRejected: isScreenRecordingUserRejected } = screenRecording;
+
+  const analysisHasScreenRecording = useStoreSelector((state) => state.analysisHasScreenRecording);
+  const analysisCanPlayScreenRecording = useStoreSelector((state) => state.analysisCanPlayScreenRecording);
+
+  useEffect(() => {
+    if (!storageEngine) {
+      return undefined;
+    }
+
+    return storageEngine.subscribeToParticipantDataWriteErrors((error) => {
+      console.error('Failed to save participant response data', error);
+      dispatch(setAlertModal({
+        show: true,
+        message: 'Your response could not be saved because the connection to the server was interrupted. Please check your internet connection, then click Retry. You can continue once your response is fully saved.',
+        title: 'Failed to Save Response',
+      }));
+    });
+  }, [dispatch, setAlertModal, storageEngine]);
+
+  // Attach event listeners
+  useEffect(() => {
+    // Focus
+    const focusListener = debounce((e: FocusEvent) => {
+      windowEvents.current.push([Date.now(), 'focus', e.target instanceof HTMLElement ? e.target.tagName : '']);
+    }, windowEventDebounceTime, { maxWait: windowEventDebounceTime });
+
+    // Inputs
+    const inputListener = debounce((e: InputEvent) => {
+      windowEvents.current.push([Date.now(), 'input', e.data ?? '']);
+    }, windowEventDebounceTime, { maxWait: windowEventDebounceTime });
+
+    // Keyboard
+    const keydownListener = debounce((e: KeyboardEvent) => {
+      windowEvents.current.push([Date.now(), 'keydown', e.key]);
+    }, windowEventDebounceTime, { maxWait: windowEventDebounceTime });
+    const keyupListener = debounce((e: KeyboardEvent) => {
+      windowEvents.current.push([Date.now(), 'keyup', e.key]);
+    }, windowEventDebounceTime, { maxWait: windowEventDebounceTime });
+
+    // Mouse/Pointer/Touch
+    const mouseDownListener = debounce((e: MouseEvent) => {
+      windowEvents.current.push([Date.now(), 'mousedown', [e.clientX, e.clientY]]);
+    }, windowEventDebounceTime, { maxWait: windowEventDebounceTime });
+
+    const mouseUpListener = debounce((e: MouseEvent) => {
+      windowEvents.current.push([Date.now(), 'mouseup', [e.clientX, e.clientY]]);
+    }, windowEventDebounceTime, { maxWait: windowEventDebounceTime });
+
+    // Window resizing
+    const resizeListener = debounce(() => {
+      windowEvents.current.push([Date.now(), 'resize', [window.innerWidth, window.innerHeight]]);
+    }, windowEventDebounceTime, { maxWait: windowEventDebounceTime });
+
+    // Mouse movement
+    const mouseMoveListener = debounce((e: MouseEvent) => {
+      windowEvents.current.push([Date.now(), 'mousemove', [e.clientX, e.clientY]]);
+    }, windowEventDebounceTime, { maxWait: windowEventDebounceTime });
+
+    // Scroll
+    const scrollListener = debounce(() => {
+      windowEvents.current.push([Date.now(), 'scroll', [window.scrollX, window.scrollY]]);
+    }, windowEventDebounceTime, { maxWait: windowEventDebounceTime });
+
+    // Visibility change
+    const visibilityListener = debounce(() => {
+      windowEvents.current.push([Date.now(), 'visibility', document.visibilityState]);
+    }, windowEventDebounceTime, { maxWait: windowEventDebounceTime });
+
+    window.addEventListener('focus', focusListener, true);
+    window.addEventListener('input', inputListener as () => void);
+    window.addEventListener('keydown', keydownListener);
+    window.addEventListener('keyup', keyupListener);
+    window.addEventListener('mousedown', mouseDownListener);
+    window.addEventListener('mouseup', mouseUpListener);
+    window.addEventListener('resize', resizeListener);
+    window.addEventListener('mousemove', mouseMoveListener);
+    window.addEventListener('scroll', scrollListener);
+    document.addEventListener('visibilitychange', visibilityListener);
+
+    return () => {
+      window.removeEventListener('focus', focusListener, true);
+      window.removeEventListener('input', inputListener as () => void);
+      window.removeEventListener('keydown', keydownListener);
+      window.removeEventListener('keyup', keyupListener);
+      window.removeEventListener('mousedown', mouseDownListener);
+      window.removeEventListener('mouseup', mouseUpListener);
+      window.removeEventListener('resize', resizeListener);
+      window.removeEventListener('mousemove', mouseMoveListener);
+      window.removeEventListener('scroll', scrollListener);
+      document.removeEventListener('visibilitychange', visibilityListener);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const { developmentModeEnabled, dataCollectionEnabled } = useMemo(() => modes, [modes]);
+
+  // No default value for withSidebar since it's a required field in uiConfig
+  const sidebarOpen = useMemo(() => (((analysisHasScreenRecording && analysisCanPlayScreenRecording) || currentComponent === 'end') ? false : (componentConfig.withSidebar ?? studyConfig.uiConfig.withSidebar)), [analysisHasScreenRecording, analysisCanPlayScreenRecording, currentComponent, componentConfig.withSidebar, studyConfig.uiConfig.withSidebar]);
+  const sidebarWidth = useMemo(() => componentConfig?.sidebarWidth ?? studyConfig.uiConfig.sidebarWidth ?? 300, [componentConfig, studyConfig]);
+  const showTitleBar = useMemo(() => componentConfig.showTitleBar ?? studyConfig.uiConfig.showTitleBar ?? true, [componentConfig, studyConfig]);
+
+  const asideOpen = useMemo(() => developmentModeEnabled && showStudyBrowser, [developmentModeEnabled, showStudyBrowser]);
+  const rowMaxWidth = useMemo(() => (asideOpen ? `max(0px, calc(100% - ${STUDY_BROWSER_WIDTH}px))` : '100%'), [asideOpen]);
+  const shouldConfirmClose = useMemo(
+    () => shouldConfirmTabClose(
+      isAnalysis,
+      currentComponent,
+      developmentModeEnabled,
+      isCompleted,
+      dataCollectionEnabled,
+      isSubmittingFinal,
+    ),
+    [isAnalysis, currentComponent, developmentModeEnabled, isCompleted, dataCollectionEnabled, isSubmittingFinal],
+  );
+
+  const [hasAudio, setHasAudio] = useState<boolean>();
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const exportInProgressRef = useRef(false);
+  const pdfExportRootRef = useRef<HTMLDivElement>(null);
+
+  const exportCurrentComponent = useCallback(async () => {
+    if (exportInProgressRef.current) {
+      return;
+    }
+
+    const exportRoot = pdfExportRootRef.current;
+    if (!exportRoot) {
+      showNotification({
+        title: 'PDF export failed',
+        message: 'The current study page is not available to export.',
+        color: 'red',
+      });
+      return;
+    }
+
+    const unsupportedReason = getPdfExportUnsupportedReason(exportRoot);
+    if (unsupportedReason) {
+      showNotification({
+        title: 'PDF export unavailable',
+        message: unsupportedReason,
+        color: 'red',
+      });
+      return;
+    }
+
+    exportInProgressRef.current = true;
+    setIsExportingPdf(true);
+    const notificationId = showNotification({
+      title: 'Preparing PDF',
+      message: 'Your download will begin when the PDF is ready.',
+      animated: false,
+      autoClose: false,
+    });
+    const wasInert = exportRoot.inert === true;
+    const previousAriaBusy = exportRoot.getAttribute('aria-busy');
+    exportRoot.inert = true;
+    exportRoot.setAttribute('aria-busy', 'true');
+
+    try {
+      await waitForNextPaint();
+      await saveElementAsPdf(exportRoot, buildPdfFilename(currentComponent));
+      hideNotification(notificationId);
+      showNotification({
+        title: 'PDF exported',
+        message: 'The current study page was downloaded.',
+        color: 'green',
+      });
+    } catch (error) {
+      console.error('Failed to export study page as PDF', error);
+      hideNotification(notificationId);
+      showNotification({
+        title: 'PDF export failed',
+        message: 'The current study page could not be exported. Please try again.',
+        color: 'red',
+      });
+    } finally {
+      exportRoot.inert = wasInert;
+      if (previousAriaBusy === null) {
+        exportRoot.removeAttribute('aria-busy');
+      } else {
+        exportRoot.setAttribute('aria-busy', previousAriaBusy);
+      }
+      exportInProgressRef.current = false;
+      setIsExportingPdf(false);
+    }
+  }, [currentComponent]);
+
+  useEffect(() => {
+    if (!shouldConfirmClose) {
+      return undefined;
+    }
+
+    const beforeUnloadListener = (event: BeforeUnloadEvent) => {
+      handleBeforeUnload(event);
+    };
+
+    window.addEventListener('beforeunload', beforeUnloadListener);
+    return () => {
+      window.removeEventListener('beforeunload', beforeUnloadListener);
+    };
+  }, [shouldConfirmClose]);
+
+  return (
+    <WindowEventsContext.Provider value={windowEvents}>
+      <RecordingContext.Provider value={screenRecording}>
+        <ReplayContext.Provider value={replay}>
+          <AppShell
+            padding="md"
+            header={{ height: showTitleBar ? 70 : 0 }}
+            aside={{ width: STUDY_BROWSER_WIDTH, breakpoint: 'xs', collapsed: { desktop: !asideOpen, mobile: !asideOpen } }}
+            footer={{ height: isAnalysis ? 125 + (hasAudio ? 55 : 0) : 0 }}
+            style={{ '--app-shell-aside-offset': '0rem' } as CSSProperties}
+          >
+            {asideOpen && <AppAside />}
+            {showTitleBar && (
+            <AppHeader
+              developmentModeEnabled={developmentModeEnabled}
+              dataCollectionEnabled={dataCollectionEnabled}
+              isExportingPdf={isExportingPdf}
+              onExportPdf={exportCurrentComponent}
+            />
+            )}
+            {!showTitleBar && (
+              <Menu position="bottom-end" withinPortal>
+                <Menu.Target>
+                  <ActionIcon
+                    data-html2canvas-ignore
+                    aria-label="Study actions"
+                    size="lg"
+                    variant="subtle"
+                    color="gray"
+                    style={{
+                      position: 'fixed', right: 10, top: 10, zIndex: 100,
+                    }}
+                  >
+                    <IconDotsVertical />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <PdfExportMenuItem
+                    isExportingPdf={isExportingPdf}
+                    onExportPdf={exportCurrentComponent}
+                  />
+                </Menu.Dropdown>
+              </Menu>
+            )}
+            <DeviceWarning developmentModeEnabled={developmentModeEnabled} />
+            {isScreenRecordingUserRejected && <ScreenRecordingRejection />}
+            <HelpModal />
+            <AlertModal />
+            <ConfigVersionWarningModal />
+            <Flex
+              ref={pdfExportRootRef}
+              data-pdf-export-root
+              direction="row"
+              gap="xs"
+              style={{
+                alignItems: 'stretch', width: '100%', maxWidth: rowMaxWidth,
+              }}
+            >
+              <header
+                data-pdf-export-header
+                style={{
+                  alignItems: 'center',
+                  borderBottom: '1px solid var(--mantine-color-default-border)',
+                  display: 'none',
+                  gap: 12,
+                  marginBottom: 20,
+                  paddingBottom: 16,
+                  width: '100%',
+                }}
+              >
+                {studyConfig.uiConfig.logoPath && (
+                  <img
+                    alt="Study logo"
+                    src={`${PREFIX}${studyConfig.uiConfig.logoPath}`}
+                    style={{ height: 40, maxWidth: 120, objectFit: 'contain' }}
+                  />
+                )}
+                <div>
+                  <div style={{ fontSize: 20, fontWeight: 700 }}>
+                    {studyConfig.studyMetadata.title}
+                  </div>
+                  <div style={{ color: 'var(--mantine-color-dimmed)', fontSize: 12 }}>
+                    {currentComponent}
+                  </div>
+                </div>
+              </header>
+              <AppNavBar
+                width={sidebarWidth}
+                top={showTitleBar ? 70 : 0}
+                bottom={isAnalysis ? 125 + (hasAudio ? 55 : 0) : 0}
+                sidebarOpen={sidebarOpen}
+              />
+              {/* 10px is the gap between the sidebar and the main content */}
+              <AppShell.Main
+                className="main"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+                w={sidebarOpen ? `calc(100% - ${sidebarWidth}px - 10px)` : '100%'}
+              >
+                {!showTitleBar && !showStudyBrowser && developmentModeEnabled && (
+                  <Button
+                    data-html2canvas-ignore
+                    variant="subtle"
+                    leftSection={<IconArrowLeft size={14} />}
+                    onClick={() => dispatch(toggleStudyBrowser())}
+                    size="xs"
+                    style={{ position: 'fixed', top: '10px', right: '50px' }}
+                  >
+                    Study Browser
+                  </Button>
+                )}
+                <Outlet />
+              </AppShell.Main>
+            </Flex>
+            {isAnalysis && (
+            <AnalysisFooter setHasAudio={setHasAudio} key={currentComponent} />
+            )}
+          </AppShell>
+        </ReplayContext.Provider>
+      </RecordingContext.Provider>
+    </WindowEventsContext.Provider>
+  );
+}

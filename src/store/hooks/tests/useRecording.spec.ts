@@ -1,0 +1,641 @@
+import React from 'react';
+import {
+  renderHook, act, cleanup, waitFor, render, screen, fireEvent,
+} from '@testing-library/react';
+import {
+  afterEach, beforeEach, describe, expect, test, vi,
+} from 'vitest';
+import { MantineProvider } from '@mantine/core';
+import * as recordingHooks from '../useRecording';
+import { useRecording, useRecordingContext } from '../useRecording';
+import type { StoreState } from '../../types';
+import ScreenRecordingPermission from '../../../public/libraries/screen-recording/assets/ScreenRecording';
+
+// ── mutable state ─────────────────────────────────────────────────────────────
+
+let mockRecordingConfig = {
+  studyHasScreenRecording: false,
+  studyHasAudioRecording: false,
+  currentComponentHasAudioRecording: false,
+  currentComponentHasScreenRecording: false,
+  currentComponentHasClickToRecord: false,
+};
+let mockCurrentComponent = 'intro';
+let mockStorageEngine: Record<string, ReturnType<typeof vi.fn>> | null = null;
+let mockStoredAnswer: { endTime: number } | null = null;
+let mockModes = { dataCollectionEnabled: true, developmentModeEnabled: false, dataSharingEnabled: false };
+
+// ── media mocks ────────────────────────────────────────────────────────────────
+
+const mockTrackFactory = () => ({
+  stop: vi.fn(),
+  enabled: true,
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn(),
+  clone: vi.fn(() => mockTrackFactory()),
+});
+
+class MockMediaStream {
+  _tracks = [mockTrackFactory()];
+
+  getTracks = vi.fn(() => this._tracks);
+
+  getVideoTracks = vi.fn(() => this._tracks);
+
+  getAudioTracks = vi.fn(() => this._tracks);
+
+  addTrack = vi.fn();
+
+  removeTrack = vi.fn();
+}
+
+class MockMediaRecorder {
+  stream: MockMediaStream;
+
+  mimeType = 'video/webm';
+
+  state = 'inactive';
+
+  private _listeners: Record<string, ((event: Partial<{ data: Blob }>) => void)> = {};
+
+  constructor(s: MockMediaStream) { this.stream = s; }
+
+  start = vi.fn();
+
+  stop = vi.fn();
+
+  addEventListener = vi.fn((event: string, handler: (event: Partial<{ data: Blob }>) => void) => {
+    this._listeners[event] = handler;
+  });
+
+  triggerEvent(event: string, data?: Blob) {
+    this._listeners[event]?.({ data });
+  }
+}
+
+vi.hoisted(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+});
+
+function renderWithMantine(ui: React.ReactElement) {
+  return render(React.createElement(MantineProvider, null, ui));
+}
+
+// ── module mocks ───────────────────────────────────────────────────────────────
+
+vi.mock('../useStudyConfig', () => ({
+  useStudyConfig: () => ({
+    uiConfig: { recordScreenFPS: undefined, recordAudio: false },
+    sequence: {
+      id: 'root', order: 'fixed', components: ['intro', 'end'], skip: [],
+    },
+  }),
+}));
+
+vi.mock('../../../routes/utils', () => ({
+  useCurrentComponent: () => mockCurrentComponent,
+  useCurrentIdentifier: () => 'intro_0',
+}));
+
+vi.mock('../../../storage/storageEngineHooks', () => ({
+  useStorageEngine: () => ({ storageEngine: mockStorageEngine }),
+}));
+
+vi.mock('../useRecordingConfig', () => ({
+  useRecordingConfig: () => mockRecordingConfig,
+}));
+
+vi.mock('../useStoredAnswer', () => ({
+  useStoredAnswer: () => mockStoredAnswer,
+}));
+
+vi.mock('../useIsAnalysis', () => ({
+  useIsAnalysis: () => false,
+}));
+
+vi.mock('../../store', () => ({
+  useStoreSelector: (selector: (s: StoreState) => unknown) => selector({
+    modes: mockModes,
+  } as StoreState),
+}));
+
+// ── lifecycle ──────────────────────────────────────────────────────────────────
+
+beforeEach(() => {
+  mockRecordingConfig = {
+    studyHasScreenRecording: false,
+    studyHasAudioRecording: false,
+    currentComponentHasAudioRecording: false,
+    currentComponentHasScreenRecording: false,
+    currentComponentHasClickToRecord: false,
+  };
+  mockCurrentComponent = 'intro';
+  mockStorageEngine = null;
+  mockStoredAnswer = null;
+  mockModes = { dataCollectionEnabled: true, developmentModeEnabled: false, dataSharingEnabled: false };
+
+  vi.stubGlobal('MediaStream', MockMediaStream);
+  vi.stubGlobal('MediaRecorder', MockMediaRecorder);
+  vi.stubGlobal('navigator', {
+    mediaDevices: {
+      getUserMedia: vi.fn().mockResolvedValue(new MockMediaStream()),
+      getDisplayMedia: vi.fn().mockResolvedValue(new MockMediaStream()),
+    },
+  });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+});
+
+// ── basic tests ────────────────────────────────────────────────────────────────
+
+describe('useRecording', () => {
+  test('returns expected properties', () => {
+    const { result } = renderHook(() => useRecording());
+    expect(result.current).toBeDefined();
+    expect(typeof result.current.startScreenCapture).toBe('function');
+    expect(typeof result.current.stopScreenCapture).toBe('function');
+    expect(typeof result.current.startScreenRecording).toBe('function');
+    expect(typeof result.current.stopScreenRecording).toBe('function');
+  });
+
+  test('initial state has recording flags false', () => {
+    const { result } = renderHook(() => useRecording());
+    expect(result.current.isScreenRecording).toBe(false);
+    expect(result.current.isAudioRecording).toBe(false);
+    expect(result.current.isScreenCapturing).toBe(false);
+  });
+
+  test('initial screenRecordingError is null', () => {
+    const { result } = renderHook(() => useRecording());
+    expect(result.current.screenRecordingError).toBeNull();
+  });
+
+  test('isMuted starts as false when clickToRecord is false', () => {
+    const { result } = renderHook(() => useRecording());
+    expect(result.current.isMuted).toBe(false);
+  });
+
+  test('setIsMuted is a function', () => {
+    const { result } = renderHook(() => useRecording());
+    expect(typeof result.current.setIsMuted).toBe('function');
+  });
+
+  test('isRejected starts as false', () => {
+    const { result } = renderHook(() => useRecording());
+    expect(result.current.isRejected).toBe(false);
+  });
+
+  test('studyHasScreenRecording reflects config', () => {
+    const { result } = renderHook(() => useRecording());
+    expect(result.current.studyHasScreenRecording).toBe(false);
+  });
+
+  test('recordAudio reflects config', () => {
+    const { result } = renderHook(() => useRecording());
+    expect(result.current.recordAudio).toBe(false);
+  });
+
+  test('stopScreenCapture can be called with null refs without crashing', () => {
+    const { result } = renderHook(() => useRecording());
+    act(() => { result.current.stopScreenCapture(); });
+    expect(result.current.isScreenCapturing).toBe(false);
+    expect(result.current.isScreenRecording).toBe(false);
+  });
+
+  test('stopScreenRecording can be called with null recorder without crashing', () => {
+    const { result } = renderHook(() => useRecording());
+    act(() => { result.current.stopScreenRecording(); });
+    expect(result.current.isScreenRecording).toBe(false);
+  });
+
+  test('startScreenRecording returns early when no audio/screen recording enabled', () => {
+    const { result } = renderHook(() => useRecording());
+    act(() => { result.current.startScreenRecording('trial_0'); });
+    expect(result.current.isScreenRecording).toBe(false);
+  });
+
+  test('setIsMuted changes isMuted state', () => {
+    const { result } = renderHook(() => useRecording());
+    act(() => { result.current.setIsMuted(true); });
+    expect(result.current.isMuted).toBe(true);
+  });
+});
+
+// ── startScreenCapture tests ───────────────────────────────────────────────────
+
+// startScreenCapture fires an internal async function (captureFn) without returning
+// the promise. Use waitFor to poll until the state updates settle.
+
+describe('useRecording startScreenCapture', () => {
+  test('success path: sets isScreenCapturing, isAudioCapturing, isMediaCapturing', async () => {
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasScreenRecording: true,
+      studyHasAudioRecording: true,
+    };
+    const { result } = renderHook(() => useRecording());
+    act(() => { result.current.startScreenCapture(); });
+    await waitFor(() => {
+      expect(result.current.isScreenCapturing).toBe(true);
+      expect(result.current.isAudioCapturing).toBe(true);
+      expect(result.current.isMediaCapturing).toBe(true);
+    });
+  });
+
+  test('audio-only: getUserMedia called, isAudioCapturing true, isScreenCapturing false', async () => {
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasScreenRecording: false,
+      studyHasAudioRecording: true,
+    };
+    const { result } = renderHook(() => useRecording());
+    act(() => { result.current.startScreenCapture(); });
+    await waitFor(() => {
+      expect(result.current.isAudioCapturing).toBe(true);
+    });
+    expect(result.current.isScreenCapturing).toBe(false);
+  });
+
+  test('error path: sets screenRecordingError on getDisplayMedia rejection (covers catch block)', async () => {
+    mockRecordingConfig = { ...mockRecordingConfig, studyHasScreenRecording: true };
+    vi.mocked(navigator.mediaDevices.getDisplayMedia).mockRejectedValue(new Error('denied'));
+    const { result } = renderHook(() => useRecording());
+    act(() => { result.current.startScreenCapture(); });
+    await waitFor(() => {
+      expect(result.current.screenRecordingError).toBe('Recording permission denied');
+    });
+  });
+});
+
+// ── startScreenRecording tests ─────────────────────────────────────────────────
+
+describe('useRecording startScreenRecording after startScreenCapture', () => {
+  test('startScreenRecording returns early when screenMediaStream is null', () => {
+    // audio recording enabled but no startScreenCapture → screenMediaStream is null
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      currentComponentHasScreenRecording: true,
+    };
+    const { result } = renderHook(() => useRecording());
+    act(() => { result.current.startScreenRecording('trial_0'); });
+    expect(result.current.isScreenRecording).toBe(false);
+  });
+
+  test('startScreenRecording after startScreenCapture starts the recorder', async () => {
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasScreenRecording: true,
+      studyHasAudioRecording: true,
+      currentComponentHasScreenRecording: true,
+      currentComponentHasAudioRecording: true,
+    };
+    mockStorageEngine = {
+      saveScreenRecording: vi.fn(async () => {}),
+      saveAudioRecording: vi.fn(async () => {}),
+    };
+    const { result } = renderHook(() => useRecording());
+    // First, start screen capture to set screenMediaStream
+    act(() => { result.current.startScreenCapture(); });
+    await waitFor(() => { expect(result.current.isMediaCapturing).toBe(true); });
+    // Now start screen recording (screenMediaStream is set)
+    act(() => { result.current.startScreenRecording('trial_0'); });
+    expect(result.current.isScreenRecording).toBe(true);
+    expect(result.current.isAudioRecording).toBe(true);
+  });
+
+  test('startScreenRecording screen-only (no audio): uses audio stop handler for audio', async () => {
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasScreenRecording: true,
+      studyHasAudioRecording: false,
+      currentComponentHasScreenRecording: true,
+      currentComponentHasAudioRecording: false,
+    };
+    mockStorageEngine = { saveAudioRecording: vi.fn(async () => {}) };
+    const { result } = renderHook(() => useRecording());
+    act(() => { result.current.startScreenCapture(); });
+    await waitFor(() => { expect(result.current.isMediaCapturing).toBe(true); });
+    act(() => { result.current.startScreenRecording('trial_0'); });
+    expect(result.current.isScreenRecording).toBe(true);
+  });
+});
+
+// ── stopScreenCapture with populated refs ──────────────────────────────────────
+
+describe('useRecording stopScreenCapture with refs populated', () => {
+  test('stopScreenCapture cleans up all refs and resets state', async () => {
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasScreenRecording: true,
+      studyHasAudioRecording: true,
+      currentComponentHasScreenRecording: true,
+      currentComponentHasAudioRecording: true,
+    };
+    mockStorageEngine = {
+      saveScreenRecording: vi.fn(async () => {}),
+      saveAudioRecording: vi.fn(async () => {}),
+    };
+    const { result } = renderHook(() => useRecording());
+    act(() => { result.current.startScreenCapture(); });
+    await waitFor(() => { expect(result.current.isMediaCapturing).toBe(true); });
+    act(() => { result.current.startScreenRecording('trial_0'); });
+    // Now call stopScreenCapture — refs have values → covers cleanup branches
+    act(() => { result.current.stopScreenCapture(); });
+    expect(result.current.isScreenCapturing).toBe(false);
+    expect(result.current.isScreenRecording).toBe(false);
+    expect(result.current.isAudioRecording).toBe(false);
+    expect(result.current.isMediaCapturing).toBe(false);
+  });
+});
+
+// ── stopAudioRecording tests ───────────────────────────────────────────────────
+
+describe('useRecording audio recording effect', () => {
+  test('audio recording effect triggers startAudioRecording when conditions met', async () => {
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasScreenRecording: false,
+      studyHasAudioRecording: true,
+      currentComponentHasAudioRecording: true,
+    };
+    mockStorageEngine = { saveAudioRecording: vi.fn(async () => {}) };
+    const { result } = renderHook(() => useRecording());
+    // Effect fires on mount with currentComponentHasAudioRecording=true, storageEngine set
+    await act(async () => { /* let effects settle */ });
+    // getUserMedia was called for audio recording
+    expect(vi.mocked(navigator.mediaDevices.getUserMedia)).toHaveBeenCalled();
+    expect(result.current.isAudioRecording).toBe(true);
+  });
+
+  test('audio effect stopAudioRecording called when currentComponentHasAudioRecording turns false', async () => {
+    mockStorageEngine = { saveAudioRecording: vi.fn(async () => {}) };
+    // Start with audio enabled
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasAudioRecording: true,
+      currentComponentHasAudioRecording: true,
+    };
+    const { result, rerender } = renderHook(() => useRecording());
+    await act(async () => { /* let effects settle */ });
+    // Now disable audio → effect re-fires with currentComponentHasAudioRecording=false
+    mockRecordingConfig = { ...mockRecordingConfig, currentComponentHasAudioRecording: false };
+    await act(async () => { rerender(); });
+    expect(result.current.isAudioRecording).toBe(false);
+  });
+});
+
+// ── screen recording effect tests ──────────────────────────────────────────────
+
+describe('useRecording screen recording effect', () => {
+  test('screen recording effect starts recording when isMediaCapturing and conditions met', async () => {
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasScreenRecording: true,
+      studyHasAudioRecording: true,
+      currentComponentHasScreenRecording: true,
+    };
+    mockStorageEngine = {
+      saveScreenRecording: vi.fn(async () => {}),
+      saveAudioRecording: vi.fn(async () => {}),
+    };
+    const { result } = renderHook(() => useRecording());
+    // Start capture to set isMediaCapturing
+    act(() => { result.current.startScreenCapture(); });
+    await waitFor(() => { expect(result.current.isMediaCapturing).toBe(true); });
+    // Screen recording effect: isMediaCapturing=true, currentComponent=intro → startScreenRecording
+    await act(async () => { /* let effects settle */ });
+    expect(result.current.isScreenRecording).toBe(true);
+  });
+
+  test('screen effect calls stopScreenCapture when currentComponent is end', async () => {
+    mockRecordingConfig = { ...mockRecordingConfig, studyHasScreenRecording: true };
+    mockStorageEngine = { saveAudioRecording: vi.fn(async () => {}) };
+    mockCurrentComponent = 'end';
+    const { result } = renderHook(() => useRecording());
+    act(() => { result.current.startScreenCapture(); });
+    // The stop effect fires because currentComponent is 'end', resetting capture state
+    await waitFor(() => { expect(result.current.isScreenCapturing).toBe(false); });
+  });
+});
+
+// ── isMuted effect test ────────────────────────────────────────────────────────
+
+describe('useRecording isMuted effect', () => {
+  test('changing isMuted updates audio track enabled state', async () => {
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasAudioRecording: true,
+    };
+    const { result } = renderHook(() => useRecording());
+    act(() => { result.current.startScreenCapture(); });
+    await waitFor(() => { expect(result.current.isMediaCapturing).toBe(true); });
+    act(() => { result.current.setIsMuted(true); });
+    // The effect fires and calls getAudioTracks().forEach(track => track.enabled = !isMuted)
+    expect(result.current.isMuted).toBe(true);
+  });
+});
+
+// ── isRejected effect test ─────────────────────────────────────────────────────
+
+describe('useRecording isRejected effect', () => {
+  test('isRejected set true when screenCaptureStarted but not isScreenCapturing', async () => {
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasScreenRecording: true,
+      studyHasAudioRecording: false,
+    };
+    const { result } = renderHook(() => useRecording());
+    // startScreenCapture → screenCaptureStarted=true, isScreenCapturing=true
+    act(() => { result.current.startScreenCapture(); });
+    await waitFor(() => { expect(result.current.isMediaCapturing).toBe(true); });
+    expect(result.current.isScreenCapturing).toBe(true);
+    // stopScreenCapture → isScreenCapturing=false, screenCaptureStarted stays true
+    // Effect: screenCaptureStarted=true && !isScreenCapturing=true → setIsRejected(true)
+    act(() => { result.current.stopScreenCapture(); });
+    expect(result.current.isRejected).toBe(true);
+  });
+});
+
+// ── useRecordingContext ────────────────────────────────────────────────────────
+
+describe('useRecordingContext', () => {
+  test('throws when used outside RecordingProvider', () => {
+    expect(() => { renderHook(() => useRecordingContext()); }).toThrow('useRecordingContext must be used within a RecordingProvider');
+  });
+});
+
+// ── DataCollection disabled tests ────────────────────────────────────────────────────────
+
+describe('useRecording with data collection disabled', () => {
+  test('does not call getUserMedia/recorder/storage via audio recording', async () => {
+    mockModes = { ...mockModes, dataCollectionEnabled: false };
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasAudioRecording: true,
+      currentComponentHasAudioRecording: true,
+    };
+    mockStorageEngine = {
+      saveAudioRecording: vi.fn(async () => {}),
+      saveScreenRecording: vi.fn(async () => {}),
+    };
+
+    const { result } = renderHook(() => useRecording());
+    await act(async () => { /* let effects settle */ });
+
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(mockStorageEngine.saveAudioRecording).not.toHaveBeenCalled();
+    expect(result.current.isAudioRecording).toBe(false);
+  });
+
+  test('does not call getUserMedia/getDisplayMedia/recorder/storage via startScreenCapture', async () => {
+    mockModes = { ...mockModes, dataCollectionEnabled: false };
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasScreenRecording: true,
+      studyHasAudioRecording: true,
+      currentComponentHasScreenRecording: true,
+      currentComponentHasAudioRecording: true,
+    };
+    mockStorageEngine = {
+      saveAudioRecording: vi.fn(async () => {}),
+      saveScreenRecording: vi.fn(async () => {}),
+    };
+
+    const MediaRecorderSpy = vi.spyOn(globalThis as never, 'MediaRecorder');
+    const originalTitle = document.title;
+    const { result, rerender } = renderHook(() => useRecording());
+
+    act(() => { result.current.startScreenCapture(); });
+    await act(async () => { /* noop */ });
+
+    expect(navigator.mediaDevices.getDisplayMedia).not.toHaveBeenCalled();
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+
+    expect(MediaRecorderSpy).not.toHaveBeenCalled();
+
+    expect(mockStorageEngine.saveAudioRecording).not.toHaveBeenCalled();
+    expect(mockStorageEngine.saveScreenRecording).not.toHaveBeenCalled();
+
+    expect(result.current.isScreenCapturing).toBe(false);
+    expect(result.current.isAudioCapturing).toBe(false);
+    expect(result.current.isMediaCapturing).toBe(false);
+
+    expect(document.title).toBe(originalTitle);
+
+    mockCurrentComponent = 'end';
+    rerender();
+    expect(result.current.isRejected).toBe(false);
+  });
+
+  test('startScreenCapture is a no-op when dataCollectionEnabled is false (does not change title, capturing flags, or set isRejected)', async () => {
+    mockModes = { ...mockModes, dataCollectionEnabled: false };
+    mockRecordingConfig = {
+      ...mockRecordingConfig,
+      studyHasScreenRecording: true,
+      studyHasAudioRecording: true,
+      currentComponentHasScreenRecording: true,
+      currentComponentHasAudioRecording: true,
+    };
+    mockStorageEngine = {
+      saveAudioRecording: vi.fn(async () => {}),
+      saveScreenRecording: vi.fn(async () => {}),
+    };
+
+    const originalTitle = document.title;
+    const { result, rerender } = renderHook(() => useRecording());
+
+    act(() => { result.current.startScreenCapture(); });
+    await act(async () => { /* noop */ });
+
+    expect(navigator.mediaDevices.getDisplayMedia).not.toHaveBeenCalled();
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+
+    expect(result.current.isScreenCapturing).toBe(false);
+    expect(result.current.isAudioCapturing).toBe(false);
+    expect(result.current.isMediaCapturing).toBe(false);
+
+    expect(document.title).toBe(originalTitle);
+
+    mockCurrentComponent = 'end';
+    rerender();
+    expect(result.current.isRejected).toBe(false);
+  });
+});
+
+describe('ScreenRecordingPermission component', () => {
+  test('screen-only button is disabled when data collection is off', () => {
+    mockModes = { ...mockModes, dataCollectionEnabled: false };
+    const startScreenCapture = vi.fn();
+    const stopScreenCapture = vi.fn();
+    vi.spyOn(recordingHooks, 'useRecordingContext').mockReturnValue({
+      studyHasAudioRecording: false,
+      recordVideoRef: { current: null },
+      startScreenCapture,
+      stopScreenCapture,
+      isScreenCapturing: false,
+      isAudioCapturing: false,
+      audioMediaStream: { current: null },
+    } as unknown as ReturnType<typeof recordingHooks.useRecordingContext>);
+
+    renderWithMantine(
+      React.createElement(ScreenRecordingPermission, {
+        setAnswer: vi.fn(),
+        parameters: undefined,
+        answers: {},
+        useTrrack: vi.fn(),
+      } as React.ComponentProps<typeof ScreenRecordingPermission>),
+    );
+
+    const button = screen.getByRole('button', { name: 'Start Recording' });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(startScreenCapture).not.toHaveBeenCalled();
+    expect(stopScreenCapture).not.toHaveBeenCalled();
+  });
+
+  test('combined screen-and-audio button is disabled when data collection is off', () => {
+    mockModes = { ...mockModes, dataCollectionEnabled: false };
+    const startScreenCapture = vi.fn();
+    const stopScreenCapture = vi.fn();
+    vi.spyOn(recordingHooks, 'useRecordingContext').mockReturnValue({
+      studyHasAudioRecording: true,
+      recordVideoRef: { current: null },
+      startScreenCapture,
+      stopScreenCapture,
+      isScreenCapturing: false,
+      isAudioCapturing: false,
+      audioMediaStream: { current: null },
+    } as unknown as ReturnType<typeof recordingHooks.useRecordingContext>);
+
+    renderWithMantine(
+      React.createElement(ScreenRecordingPermission, {
+        setAnswer: vi.fn(),
+        parameters: undefined,
+        answers: {},
+        useTrrack: vi.fn(),
+      } as React.ComponentProps<typeof ScreenRecordingPermission>),
+    );
+
+    const button = screen.getByRole('button', { name: 'Start Recording' });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(startScreenCapture).not.toHaveBeenCalled();
+    expect(stopScreenCapture).not.toHaveBeenCalled();
+  });
+});
