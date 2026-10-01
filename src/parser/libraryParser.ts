@@ -9,6 +9,7 @@ import {
 import {
   FactorPlanBlock, isDynamicBlock, isFactorBlock, isInheritedComponent,
 } from './utils';
+import { mergeComponentConfigs, studyComponentToIndividualComponent } from '../utils/handleComponentInheritance';
 import { PREFIX } from '../utils/Prefix';
 import { getSequenceFlatMapWithInterruptions } from '../utils/getSequenceFlatMap';
 
@@ -902,6 +903,12 @@ function compileFactorBlock(
     ? [block.components]
     : block.components;
   const materializedConditions = new Map<string, string[]>();
+  const factorLabels: Record<string, string> = {};
+  const withFactorLabels = (sequence: StudyConfig['sequence']): StudyConfig['sequence'] => {
+    // Display labels must not change the persisted config hash.
+    Object.defineProperty(sequence, '__revisitFactorLabels', { value: factorLabels });
+    return sequence;
+  };
   const materializeCondition = (condition: MaterializedFactorCondition): string[] => {
     const conditionId = createFactorConditionId(block.id, condition);
     const existing = materializedConditions.get(conditionId);
@@ -952,6 +959,8 @@ function compileFactorBlock(
       }
 
       components[componentId] = component;
+      const values = Object.values(condition).map((value) => (typeof value === 'string' ? value : JSON.stringify(value)));
+      factorLabels[componentId] = values.length ? `${values.join(' · ')} — ${baseComponent}` : baseComponent;
       return [componentId];
     });
     materializedConditions.set(conditionId, conditionComponentIds);
@@ -978,7 +987,7 @@ function compileFactorBlock(
   if (resolution.hasRuntimeOrder || resolution.hasRuntimeSample) {
     conditions.forEach((condition) => materializeCondition(condition));
     return {
-      sequence: {
+      sequence: withFactorLabels({
         type: 'factor-runtime-plan',
         id: block.id,
         order: 'fixed',
@@ -989,7 +998,7 @@ function compileFactorBlock(
         ...(block.interruptions !== undefined ? { interruptions: block.interruptions } : {}),
         ...(block.skip !== undefined ? { skip: block.skip } : {}),
         ...(block.conditional !== undefined ? { conditional: block.conditional } : {}),
-      } as StudyConfig['sequence'],
+      } as StudyConfig['sequence']),
       components,
     };
   }
@@ -1013,7 +1022,7 @@ function compileFactorBlock(
   }
 
   return {
-    sequence: {
+    sequence: withFactorLabels({
       id: block.id,
       order,
       components: sequenceComponents,
@@ -1021,7 +1030,7 @@ function compileFactorBlock(
       ...(block.interruptions !== undefined ? { interruptions: block.interruptions } : {}),
       ...(block.skip !== undefined ? { skip: block.skip } : {}),
       ...(block.conditional !== undefined ? { conditional: block.conditional } : {}),
-    },
+    } as StudyConfig['sequence']),
     components,
   };
 }
@@ -1077,9 +1086,7 @@ export function materializeParticipantConfig(
 ): StudyConfig {
   const components = Object.fromEntries(
     Object.entries(config.components).map(([componentId, component]) => {
-      const inheritedComponent = isInheritedComponent(component) && config.baseComponents
-        ? merge({}, config.baseComponents[component.baseComponent], component)
-        : component;
+      const inheritedComponent = studyComponentToIndividualComponent(component, config);
       const parameters = {
         ...('parameters' in inheritedComponent ? inheritedComponent.parameters : {}),
         ...globalParameters,
@@ -1470,8 +1477,7 @@ export async function loadLibrariesParseNamespace(importedLibraries: string[], e
             baseComponent: component.baseComponent,
             ...(component.withSidebar !== undefined ? { withSidebar: component.withSidebar } : {}),
           };
-          const mergedComponent = merge(
-            {},
+          const mergedComponent = mergeComponentConfigs(
             importedLibrariesData[libraryName].baseComponents?.[component.baseComponent],
             component,
           ) as IndividualComponent & { baseComponent?: string };

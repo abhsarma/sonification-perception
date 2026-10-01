@@ -7,9 +7,7 @@ import AudioPlot from './sonification';
 import { StimulusParams } from '../../../store/types';
 import { useNextStep } from '../../../store/hooks/useNextStep';
 
-export default function Task({parameters}: StimulusParams<{ prop: number }>) {
-    // const [result, setResult] = useState<string | null>(null);
-
+export default function Task({parameters}: StimulusParams<{ taskid: string, mapping: string, prop: number }>) {
     const trialIndex = 1;
     const prop = parameters.prop / 20;
     const n = 5;
@@ -40,7 +38,7 @@ export default function Task({parameters}: StimulusParams<{ prop: number }>) {
                 <BarPlot data={data} indicators={indicators} />
             </Center>
             <Center>
-                <AudioPlot data={data} indicators={indicators} />
+                <AudioPlot data={data} mapping={parameters.mapping} indicators={indicators} />
             </Center>
         </Stack>
     );

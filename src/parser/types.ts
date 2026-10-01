@@ -15,6 +15,13 @@ export type JsonArray = JsonValue[];
 export interface GlobalConfig {
   /** A required json schema property. This should point to the GitHub link for the version of the schema you would like. See examples in the public folder for more information. */
   $schema: string;
+  /** Landing-page tabs in display order. Unassigned studies use the configured Studies tab, or a default Studies tab appended after configured tabs. If omitted or empty, all studies appear in Studies. */
+  tabs?: {
+    /** A unique, non-blank tab name. Study assignments and the tab URL parameter reference this exact label. */
+    label: string;
+    /** An optional Markdown description displayed above the studies in this tab. */
+    description?: string;
+  }[];
   /** A required property that specifies the options for the configList property. */
   configs: {
     /** The key is used to identify the study config file. This key is used in the configList property. */
@@ -23,6 +30,8 @@ export interface GlobalConfig {
       path: string;
       /** Indicates whether the study is a test study. This is used to hide the study from the landing page. */
       test?: boolean;
+      /** The exact label of a configured tab. Unassigned studies appear in the default Studies tab. */
+      tab?: string;
     };
   };
   /** A required property that is used to generate the list of available studies in the UI. This list is displayed on the landing page when running the app. */
@@ -301,8 +310,12 @@ export interface UIConfig {
   clickToRecord?: boolean;
   /** Whether or not we want to utilize screen recording feature. If true, will record audio on all components unless deactivated on individual components. This must be set to true if you want to record audio on any component in your study. Defaults to false. It's also required that the library component, $screen-recording.components.screenRecordingPermission, be included in the study at some point before any component that you want to record the screen on to ensure permissions are granted and screen capture has started. */
   recordScreen?: boolean;
+  /** Whether or not we want to utilize webcam recording. If true, will record webcam video on all components unless deactivated on individual components. Defaults to false. Studies using webcam without screen capture should include the webcam permission component before any recorded component. Studies combining webcam with screen capture should use the screen recording permission component. */
+  recordWebcam?: boolean;
   /** Desired fps for recording screen. If possible, this value will be used, but if it's not possible, the user agent will use the closest possible match. */
   recordScreenFPS?: number;
+  /** Whether or not to capture game controller input into windowEvents. If true, gamepad button and axis events are recorded on all components unless deactivated on individual components. Defaults to false. Browsers do not expose a gamepad to the page until the participant presses a button on it, so nothing is captured before that first press. */
+  captureGamepad?: boolean;
   /** Whether to prepend questions with their index (+ 1). This should only be used when all questions are in the same location, e.g. all are in the side bar. */
   enumerateQuestions?: boolean;
   /** Whether to show the response dividers. Defaults to false. */
@@ -353,6 +366,11 @@ export interface StringOption {
   infoText?: string;
 }
 
+export interface ButtonOption extends StringOption {
+  /** Keyboard shortcut for this button (e.g., "r", "ArrowLeft", or "Shift+X"). */
+  key?: string;
+}
+
 /**
  * The MatrixQuestionOption interface is used to define the question options for matrix responses.
  * The label is the fallback text displayed to participants, and the value is the key stored in the participant's data.
@@ -369,12 +387,55 @@ export interface MatrixQuestionOption extends StringOption {
 /** StringOption normalized to always include a value. */
 export interface ParsedStringOption extends Omit<StringOption, 'value'> {
   value: string;
+  key?: string;
 }
 
 /** MatrixQuestionOption normalized to always include a value. */
 export interface ParsedMatrixQuestionOption extends Omit<MatrixQuestionOption, 'value'> {
   value: string;
 }
+
+export type EqualityComparison = 'equals' | 'doesNotEqual';
+
+export type StringComparison =
+  | 'matchesRegex'
+  | 'contains'
+  | 'doesNotContain';
+
+export type NumericComparison =
+  | 'lessThan'
+  | 'lessThanOrEqual'
+  | 'greaterThan'
+  | 'greaterThanOrEqual';
+
+export type ValueCondition =
+  | {
+      comparison: EqualityComparison;
+      value: string | number | boolean | string[];
+    }
+  | {
+      comparison: StringComparison;
+      value: string;
+    }
+  | {
+      comparison: NumericComparison;
+      value: number;
+    };
+
+/**
+ * Controls visibility based on another response's answer in the same component.
+ * List equality comparisons ignore selection order.
+ * Unanswered or conditionally hidden controlling responses never satisfy a condition.
+ */
+export type ResponseVisibilityCondition = {
+  responseId: string;
+} & (
+  | ValueCondition
+  | {
+      comparison: 'isCorrect';
+      value: boolean;
+    }
+);
 
 /**
  * The BaseResponse interface is used to define the required fields for all responses.
@@ -412,6 +473,8 @@ export interface BaseResponse {
   style?: Styles;
   /** Exclude response from randomization. If present, will override the `responseOrder` randomization setting in the components. Defaults to false. */
   excludeFromRandomization?: boolean;
+  /** Show this response only when another response in this component satisfies the condition. */
+  visibleIf?: ResponseVisibilityCondition;
 }
 
 /**
@@ -447,7 +510,7 @@ export interface NumericalResponse extends BaseResponse {
 }
 
 /** The validation operations available for short and long text responses. */
-export type TextValidationType = 'matchesRegex' | 'contains' | 'doesNotContain' | 'equals' | 'doesNotEqual';
+export type TextValidationType = EqualityComparison | StringComparison;
 
 /**
  * A validation rule applied to a short or long text response.
@@ -1113,11 +1176,13 @@ export interface CustomResponse extends BaseResponse {
  */
 export interface ButtonsResponse extends BaseResponse {
   type: 'buttons';
-  options: (StringOption | string)[];
+  options: (ButtonOption | string)[];
   /** The default value of the response. Specify one option value as a string. */
   default?: string;
   /** The order in which the buttons are displayed. Defaults to fixed. */
   optionOrder?: 'fixed' | 'random';
+  /** Set to true to hide keybinding indicators on buttons. Defaults to false when keymapping is active, else false. */
+  hideKeyVisual?: boolean;
 }
 
 /**
@@ -1292,6 +1357,10 @@ export interface BaseIndividualComponent {
   clickToRecord?: boolean;
   /** Whether or not we want to utilize screen recording feature. If present, will override the record screen setting in the uiConfig. If true, the uiConfig must have recordScreen set to true or the screen will not be captured. It's also required that the library component, $screen-recording.components.screenRecordingPermission, be included in the study at some point before this component to ensure permissions are granted and screen capture has started. */
   recordScreen?: boolean;
+  /** Whether or not we want to utilize webcam recording. If present, will override the record webcam setting in the uiConfig. Studies using webcam without screen capture should include the webcam permission component before this component. Studies combining webcam with screen capture should use the screen recording permission component. */
+  recordWebcam?: boolean;
+  /** Whether or not to capture game controller input into windowEvents. If present, will override the capture gamepad setting in the uiConfig. */
+  captureGamepad?: boolean;
   /** Whether to prepend questions with their index (+ 1). This should only be used when all questions are in the same location, e.g. all are in the side bar. If present, will override the enumeration of questions setting in the uiConfig. */
   enumerateQuestions?: boolean;
   /** Whether to show the response dividers. If present, will override the response dividers setting in the uiConfig. */
@@ -2245,7 +2314,7 @@ export interface LibraryConfig {
   baseComponents?: BaseComponents;
 }
 
-export type ErrorWarningCategory = 'invalid-config' | 'invalid-library-config' | 'undefined-library' | 'undefined-base-component' | 'undefined-component' | 'sequence-validation' | 'skip-validation' | 'unused-component' | 'disabled-sidebar' | 'default-contact-email' | 'default-firebase-config' | 'default-supabase-config';
+export type ErrorWarningCategory = 'invalid-config' | 'invalid-library-config' | 'undefined-library' | 'undefined-base-component' | 'undefined-component' | 'sequence-validation' | 'skip-validation' | 'unused-component' | 'disabled-sidebar' | 'empty-sidebar' | 'default-contact-email' | 'default-firebase-config' | 'default-supabase-config';
 
 /**
  * @ignore

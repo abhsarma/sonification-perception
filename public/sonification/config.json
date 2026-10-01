@@ -26,8 +26,12 @@
     "studyEndAutoRedirectDelay": 10000
   },
   "factors": {
-    "mapping": ["pitch", "tapping", "duration"],
-    "prop": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    "mapping": ["pitch", "tapping"],
+    "prop": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+    "trialCond": {
+      "action": "cross",
+      "factors": ["mapping", "prop"]
+    }
   },
   "baseComponents": {
     "test": {
@@ -74,7 +78,6 @@
       ]
     }
   },
-  "betweenSubjects": ["mapping"],
   "sequence": {
     "order": "fixed",
     "components": [
@@ -82,7 +85,7 @@
       {
         "type": "factor",
         "id": "test",
-        "factor": "prop",
+        "factor": "trialCond",
         "order": "random",
         "components": "test"
       }

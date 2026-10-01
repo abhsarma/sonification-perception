@@ -1,85 +1,58 @@
 import { useRef } from 'react';
-import { Button } from '@mantine/core';
-import { compileAudioGraph, SequenceStream, TopLevelSpec } from 'erie-web';
+import { Group, Button } from '@mantine/core';
+import { compileAudioGraph, MAX_PITCH, SequenceStream, TopLevelSpec } from 'erie-web';
+import { pitchPlot, pitchScales } from './erie/01-pitch';
+import { tapPlot, tapScales } from './erie/02-tapping';
+// import durationPlot from './02-duration';
 
-// Deliberately outside PITCH_DOMAIN so the marker tone is always distinguishable
-// from a real data point; Erie clamps it to the top of PITCH_RANGE.
-const MARKER_PITCH = -20;
 
-
-export default function AudioPlot({data, indicators} : {data: Array<number>, indicators: Array<number> }) {
+export default function AudioPlot({data, mapping, indicators} : {data: Array<number>, mapping: String, indicators: Array<number> }) {
     const streamRef = useRef<SequenceStream | null>(null);
 
-    // Erie's conditional encoding isn't wired up for pre-recorded (non-streaming)
-    // specs, so the marker tone is added as its own row placed right before the
-    // indicator's row, rather than as a condition on the pitch channel.
-    let acc: number = 0;
-    const sonData = data.flatMap((y, i) => {
-        const isIndicator = indicators.includes(i);
-        const rows: {index: number, type: string, y: number}[] = [];
-        if (isIndicator) {
-            rows.push({index: i + acc, type: 'signal', y: MARKER_PITCH});
-        }
-        acc = isIndicator ? acc + 0.5 : acc;
-        rows.push({index: i + acc, type: 'data', y});
-        return rows;
-    });
+    const MIN_DATA = 0;
+    const MAX_DATA = 100;
+
+    // Both overlay streams share the same time domain/range so the marker
+    // stream's events line up with the corresponding bar in the data stream.
+    const offset = 0.5;
+    const sonData = data.map((y, i) => ({index: i, y}));
+    const markerData = indicators.map((i) => ({index: i - offset}));
+    
 
     const play = async () => {
-        const spec: TopLevelSpec = {
-            data: { values: sonData },
-            tone: {type: 'sine', continued: false},
-            config: { skipStartSpeech: true },
-            encoding: {
-                time: {
-                    field: 'index',
-                    type: 'quantitative',
-                    scale: {length: 5, description: 'skip'},
-                },
-                duration: {
-                    field: "type",
-                    type: "nominal",
-                    scale: {
-                        domain: ["data", "signal"],
-                        range: [0.5, 0.05],
-                        description: "skip"
-                    }
-                },
-                timbre: {
-                    field: "type",
-                    type: "nominal",
-                    scale: {
-                        domain: ["data", "signal"],
-                        range: ["sine", "triangle"],
-                        description: 'skip'
-                    }
-                },
-                pitch: {
-                    field: 'y',
-                    type: 'quantitative',
-                    scale: {
-                        domain: [-20, 0, 100],
-                        range: [3000, 220, 2000],
-                        band: 1,
-                        polarity: 'positive',
-                        singleTappingPosition: 'middle',
-                        title: 'y',
-                        description: 'skip'
-                    }
-                }
-            },
-            ordering: [{
-                specifier: { role: 'sound', stream: { index: 0 } },
-                notify: { beforePlay: false, afterPlay: false }
-            }]
-        } as TopLevelSpec;
+        let spec;
 
-        const stream = await compileAudioGraph(spec, {}) as SequenceStream;
+        if (mapping == "pitch") {
+            spec = pitchPlot(sonData, markerData, [MIN_DATA, MAX_DATA]);
+        } else if (mapping == "tapping") {
+            spec = tapPlot(sonData, markerData, [MIN_DATA, MAX_DATA]);
+        }
+
+        const stream = await compileAudioGraph(spec, {baseUrl: '/'}) as SequenceStream;
         streamRef.current = stream;
 
         const audioQueue = await stream.prerender();
         console.log(audioQueue.queue);
+
         await stream.playQueue();
+    };
+
+    const playMin = async () => {
+        // const spec = pitchScales(MIN_DATA, [MIN_DATA, MAX_DATA]);
+        // const stream = await compileAudioGraph(spec, {baseUrl: '/'}) as SequenceStream;
+        // streamRef.current = stream;
+
+        // // const audioQueue = await stream.prerender();
+        // await stream.playQueue();
+    };
+
+    const playMax = async () => {
+        // const spec = pitchScales(MAX_DATA, [MIN_DATA, MAX_DATA]);
+        // const stream = await compileAudioGraph(spec, {baseUrl: '/'}) as SequenceStream;
+        // streamRef.current = stream;
+
+        // // const audioQueue = await stream.prerender();
+        // await stream.playQueue();
     };
 
     const stop = async () => {
@@ -87,9 +60,11 @@ export default function AudioPlot({data, indicators} : {data: Array<number>, ind
     };
 
     return (
-        <Button.Group>
+        <Group>
             <Button onClick={play}>Play</Button>
-            <Button onClick={stop} variant="default">Stop</Button>
-        </Button.Group>
+            {/* <Button onClick={stop} variant="default">Stop</Button> */}
+            <Button onClick={playMin} variant="light">Play Min</Button>
+            <Button onClick={playMax} variant="light">Play Max</Button>
+        </Group>
     );
 }
