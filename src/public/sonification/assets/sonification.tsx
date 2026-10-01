@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { Group, Button } from '@mantine/core';
-import { compileAudioGraph, MAX_PITCH, SequenceStream, TopLevelSpec } from 'erie-web';
+import { compileAudioGraph, SequenceStream } from 'erie-web';
 import { pitchPlot, pitchScales } from './erie/01-pitch';
 import { tapPlot, tapScales } from './erie/02-tapping';
 // import durationPlot from './02-duration';
@@ -38,21 +38,21 @@ export default function AudioPlot({data, mapping, indicators} : {data: Array<num
     };
 
     const playMin = async () => {
-        // const spec = pitchScales(MIN_DATA, [MIN_DATA, MAX_DATA]);
-        // const stream = await compileAudioGraph(spec, {baseUrl: '/'}) as SequenceStream;
-        // streamRef.current = stream;
+        const spec = pitchScales(MIN_DATA, [MIN_DATA, MAX_DATA]);
+        const stream = await compileAudioGraph(spec, {baseUrl: '/'}) as SequenceStream;
+        streamRef.current = stream;
 
-        // // const audioQueue = await stream.prerender();
-        // await stream.playQueue();
+        // const audioQueue = await stream.prerender();
+        await stream.playQueue();
     };
 
     const playMax = async () => {
-        // const spec = pitchScales(MAX_DATA, [MIN_DATA, MAX_DATA]);
-        // const stream = await compileAudioGraph(spec, {baseUrl: '/'}) as SequenceStream;
-        // streamRef.current = stream;
+        const spec = pitchScales(MAX_DATA, [MIN_DATA, MAX_DATA]);
+        const stream = await compileAudioGraph(spec, {baseUrl: '/'}) as SequenceStream;
+        streamRef.current = stream;
 
-        // // const audioQueue = await stream.prerender();
-        // await stream.playQueue();
+        // const audioQueue = await stream.prerender();
+        await stream.playQueue();
     };
 
     const stop = async () => {
@@ -63,8 +63,8 @@ export default function AudioPlot({data, mapping, indicators} : {data: Array<num
         <Group>
             <Button onClick={play}>Play</Button>
             {/* <Button onClick={stop} variant="default">Stop</Button> */}
-            <Button onClick={playMin} variant="light">Play Min</Button>
-            <Button onClick={playMax} variant="light">Play Max</Button>
+            {/* <Button onClick={playMin} variant="light">Play Min</Button>
+            <Button onClick={playMax} variant="light">Play Max</Button> */}
         </Group>
     );
 }
