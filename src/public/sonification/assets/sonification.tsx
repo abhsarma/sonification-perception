@@ -30,7 +30,7 @@ export default function AudioPlot({data, mapping, indicators} : {data: Array<num
 
             if (!spec) return;
 
-            const stream = await compileAudioGraph(spec, {baseUrl: '/'}) as SequenceStream;
+            const stream = await compileAudioGraph(spec, {baseUrl: import.meta.env.BASE_URL}) as SequenceStream;
             streamRef.current = stream;
 
             const audioQueue = await stream.prerender();
@@ -42,7 +42,7 @@ export default function AudioPlot({data, mapping, indicators} : {data: Array<num
 
     const playMin = async () => {
         const spec = pitchScales(MIN_DATA, [MIN_DATA, MAX_DATA]);
-        const stream = await compileAudioGraph(spec, {baseUrl: '/'}) as SequenceStream;
+        const stream = await compileAudioGraph(spec, {baseUrl: import.meta.env.BASE_URL}) as SequenceStream;
         streamRef.current = stream;
 
         // const audioQueue = await stream.prerender();
@@ -51,7 +51,7 @@ export default function AudioPlot({data, mapping, indicators} : {data: Array<num
 
     const playMax = async () => {
         const spec = pitchScales(MAX_DATA, [MIN_DATA, MAX_DATA]);
-        const stream = await compileAudioGraph(spec, {baseUrl: '/'}) as SequenceStream;
+        const stream = await compileAudioGraph(spec, {baseUrl: import.meta.env.BASE_URL}) as SequenceStream;
         streamRef.current = stream;
 
         // const audioQueue = await stream.prerender();
