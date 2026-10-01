@@ -62,6 +62,7 @@
     "d3": "^7.9.0",
     "dayjs": "^1.11.18",
     "diff": "^8.0.2",
+    "erie-web": "^1.0.1",
     "eslint-config-airbnb": "^19.0.4",
     "firebase": "^11.2.0",
     "handlebars": "^4.7.9",
