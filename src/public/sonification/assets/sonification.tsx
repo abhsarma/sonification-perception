@@ -13,9 +13,7 @@ export default function AudioPlot({data, mapping, indicators} : {data: Array<num
 
     // Both overlay streams share the same time domain/range so the marker
     // stream's events line up with the corresponding bar in the data stream.
-    const offset = 0.5;
     const sonData = data.map((y, i) => ({index: i, y}));
-    const markerData = indicators.map((i) => ({index: i - offset}));
     
 
     const play = async () => {
@@ -23,9 +21,9 @@ export default function AudioPlot({data, mapping, indicators} : {data: Array<num
 
         if (mapping) {
             if (mapping == "pitch") {
-                spec = pitchPlot(sonData, markerData, [MIN_DATA, MAX_DATA]);
+                spec = pitchPlot(sonData, indicators, [MIN_DATA, MAX_DATA]);
             } else if (mapping == "tapping") {
-                spec = tapPlot(sonData, markerData, [MIN_DATA, MAX_DATA]);
+                spec = tapPlot(sonData, indicators, [MIN_DATA, MAX_DATA]);
             }
 
             if (!spec) return;
@@ -34,7 +32,8 @@ export default function AudioPlot({data, mapping, indicators} : {data: Array<num
             streamRef.current = stream;
 
             const audioQueue = await stream.prerender();
-            console.log(audioQueue.queue);
+            // console.log(audioQueue.queue[0]['overlays'][0]['sounds'].map(d => d.tap.pattern.length));
+            console.log(audioQueue.queue)
 
             await stream.playQueue();
         }

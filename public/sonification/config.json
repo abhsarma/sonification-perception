@@ -18,7 +18,8 @@
     "logoPath": "revisitAssets/revisitLogoSquare.svg",
     "withProgressBar": true,
     "autoDownloadStudy": false,
-    "withSidebar": true,
+    "withSidebar": false,
+    "stylesheetPath": "sonification/assets/style.css",
     "urlParticipantIdParam": "PROLIFIC_PID",
     "participantNameField": "introduction.prolificId",
     "studyEndMsg": "Thank you for completing the study! Please wait while we automatically redirect you to Prolific. Or you can click on this [link](https://app.prolific.com/submissions/complete?cc=C1PEMLO4)",
@@ -26,7 +27,7 @@
     "studyEndAutoRedirectDelay": 10000
   },
   "factors": {
-    "mapping": ["pitch", "tapping"],
+    "mapping": ["pitch"],
     "prop": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
     "trialCond": {
       "action": "cross",
@@ -41,24 +42,31 @@
         "taskid": "test"
       },
       "stylesheetPath": "sonification/assets/task.css",
-      "helpTextPath": "sonification/assets/help-.md",
+      "helpTextPath": "sonification/assets/help.md",
       "response": [
         {
           "id": "test",
-          "prompt": "",
+          "prompt": "Please enter the ratio of the smaller value to the larger value (between 0 and 1)",
           "required": true,
-          "type": "buttons",
-          "options": ["false", "true"],
+          "type": "numerical",
+          "min": 0,
+          "max": 1,
           "location": "belowStimulus",
           "hidden": true
         }
-      ],
-      "correctAnswer": [
-        {
-          "id": "test",
-          "answer": true
-        }
       ]
+    },
+    "training": {
+      "type": "react-component",
+      "path": "sonification/assets/04-training.tsx",
+      "stylesheetPath": "sonification/assets/task.css",
+      "parameters": {
+        "taskid": "train"
+      },
+      "response": [],
+      "provideFeedback": true,
+      "allowFailedTraining": true,
+      "trainingAttempts": 3
     }
   },
   "components": {
@@ -76,12 +84,91 @@
           "placeholder": "Prolific ID"
         }
       ]
+    },
+    "tutorial-1": {
+      "type": "react-component",
+      "path": "sonification/assets/02-tutorial_1.tsx",
+      "parameters": {
+        "taskid": "test"
+      },
+      "response": []
+    },
+    "tutorial-2": {
+      "type": "react-component",
+      "path": "sonification/assets/03-tutorial_2.tsx",
+      "parameters": {
+        "taskid": "test"
+      },
+      "response": []
+    }, 
+    "training-1": {
+        "baseComponent": "training", 
+        "parameters": {"index": 1, "prop": 0.2}, 
+        "response": [{
+            "id": "trainingProp-1",
+            "prompt": "",
+            "type": "numerical",
+            "location": "belowStimulus",
+            "min": 1,
+            "max": 100
+        }],
+        "correctAnswer": [{"id": "trainingProp-1", "answer": 20}], 
+        "helpTextPath": "incentives-dm/assets/help.md"
+    }, 
+    "training-2": {
+        "baseComponent": "training", 
+        "parameters": {"index": 2, "prop": 0.5}, 
+        "response": [{
+            "id": "trainingProp-2",
+            "prompt": "",
+            "type": "numerical",
+            "location": "belowStimulus",
+            "min": 1,
+            "max": 100
+        }],
+        "correctAnswer": [{"id": "trainingProp-2", "answer": 50}], 
+        "helpTextPath": "incentives-dm/assets/help.md"
+    }, 
+    "training-3": {
+        "baseComponent": "training", 
+        "parameters": {"index": 3, "prop": 0.6}, 
+        "response": [{
+            "id": "trainingProp-3",
+            "prompt": "",
+            "type": "numerical",
+            "location": "belowStimulus",
+            "min": 1,
+            "max": 100
+        }],
+        "correctAnswer": [{"id": "trainingProp-3", "answer": 60}], 
+        "helpTextPath": "incentives-dm/assets/help.md"
+    }, 
+    "training-4": {
+        "baseComponent": "training", 
+        "parameters": {"index": 4, "prop": 0.9}, 
+        "response": [{
+            "id": "trainingProp-4",
+            "prompt": "",
+            "type": "numerical",
+            "location": "belowStimulus",
+            "min": 1,
+            "max": 100
+        }],
+        "correctAnswer": [{"id": "trainingProp-4", "answer": 90}], 
+        "helpTextPath": "incentives-dm/assets/help.md"
     }
   },
   "sequence": {
     "order": "fixed",
     "components": [
       "introduction",
+      "tutorial-1",
+      "tutorial-2",
+      {
+        "id": "train",
+        "order": "random",
+        "components": ["training-1", "training-2", "training-3", "training-4"]
+      },
       {
         "type": "factor",
         "id": "test",

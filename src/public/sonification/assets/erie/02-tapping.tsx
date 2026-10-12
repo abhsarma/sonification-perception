@@ -3,18 +3,21 @@ import { TopLevelSpec } from 'erie-web';
 const SCALE_TONE = "sine"
 const MARKER_TONE = "hithat"
 const MIN_TAPS = 1;
-const MAX_TAPS = 25;
+const MAX_TAPS = 100;
 const STEP_SECONDS = 2; // pause between successive data points, in seconds
+const offset = 0.5
 
-export function tapPlot(sonData: Array<{index: number, y: number}>, markerData: Array<{index: number}>, domain: Array<number>) {
+export function tapPlot(sonData: Array<{index: number, y: number}>, markerIndex: Array<number>, domain: Array<number>) {
     const timeLength = sonData.length;
 
-    console.log(sonData, markerData);
-
     const range = [MIN_TAPS, MAX_TAPS];
+
+    console.log(range);
     const timeDomain: [number, number] = [0, sonData.length - 1];
     // subtracting `offset` from index 0 could lead to a time before the stream starts so push the range out
     const timeRange: [number, number] = [1, 1 + STEP_SECONDS * (timeLength - 1)];
+
+    const markerData = markerIndex.map(d => ({index: d * (timeRange[1] - timeRange[0])/(sonData.length - 1) + timeRange[0] - offset}));
 
     const spec: TopLevelSpec = {
         config: { skipStartSpeech: true },
@@ -22,20 +25,23 @@ export function tapPlot(sonData: Array<{index: number, y: number}>, markerData: 
             {
                 name: 'data',
                 data: { values: sonData },
-                tone: {type: 'hithat', continued: false},
+                tone: {type: 'click', continued: false},
                 encoding: {
                     time: {
                         field: 'index',
                         type: 'quantitative',
                         scale: {domain: timeDomain, range: timeRange, length: timeLength, description: 'skip'},
                     },
-                    tapCount: {
+                    pitch: {
+                        value: 1000
+                    },
+                    tapSpeed: {
                         field: 'y',
                         type: 'quantitative',
                         scale: {
                             domain: domain,
                             range: range,
-                            band: 0.025,
+                            band: 0.5,
                             polarity: 'positive',
                             singleTappingPosition: 'start',
                             title: 'y',
@@ -57,6 +63,14 @@ export function tapPlot(sonData: Array<{index: number, y: number}>, markerData: 
                     duration: { value: 0.5  },
                     pitch: { value: 500 },
                     loudness: { value: 0.4 }
+                }
+            }
+        ],
+        "sampling": [
+            {
+                "name": "click",
+                "sample": {
+                    "mono": "audio_sample/geiger-click.wav"
                 }
             }
         ],
