@@ -4,8 +4,18 @@ import { compileAudioGraph, SequenceStream } from 'erie-web';
 import { pitchPlot, pitchScales } from './erie/01-pitch';
 import { tapPlot, tapScales } from './erie/02-tapping';
 
+const AUDIO_PLOTS = {
+    pitch: pitchPlot,
+    tapping: tapPlot,
+} as const;
 
-export default function AudioPlot({data, mapping, indicators} : {data: Array<number>, mapping: String, indicators: Array<number> }) {
+export type Mapping = keyof typeof AUDIO_PLOTS; // "pitch" | "tapping"
+
+export default function AudioPlot({data, mapping, indicators} : {
+    data: Array<number>, 
+    mapping: Mapping, 
+    indicators: Array<number> 
+}) {
     const streamRef = useRef<SequenceStream | null>(null);
 
     const MIN_DATA = 0;
@@ -15,28 +25,16 @@ export default function AudioPlot({data, mapping, indicators} : {data: Array<num
     // stream's events line up with the corresponding bar in the data stream.
     const sonData = data.map((y, i) => ({index: i, y}));
     
-
     const play = async () => {
-        let spec;
+        const spec = AUDIO_PLOTS[mapping](sonData, indicators, [MIN_DATA, MAX_DATA]);
 
-        if (mapping) {
-            if (mapping == "pitch") {
-                spec = pitchPlot(sonData, indicators, [MIN_DATA, MAX_DATA]);
-            } else if (mapping == "tapping") {
-                spec = tapPlot(sonData, indicators, [MIN_DATA, MAX_DATA]);
-            }
+        const stream = await compileAudioGraph(spec, {baseUrl: import.meta.env.BASE_URL}) as SequenceStream;
+        streamRef.current = stream;
 
-            if (!spec) return;
-
-            const stream = await compileAudioGraph(spec, {baseUrl: import.meta.env.BASE_URL}) as SequenceStream;
-            streamRef.current = stream;
-
-            const audioQueue = await stream.prerender();
-            // console.log(audioQueue.queue[0]['overlays'][0]['sounds'].map(d => d.tap.pattern.length));
-            console.log(audioQueue.queue)
-
-            await stream.playQueue();
-        }
+        const audioQueue = await stream.prerender();
+        console.log(audioQueue.queue[0]['overlays'][0]['sounds'].map(d => d.tap.pattern.length));
+        console.log(audioQueue.queue);
+        await stream.playQueue();
     };
 
     const playMin = async () => {

@@ -31,8 +31,6 @@ export default function Task({parameters}: StimulusParams<{ taskid: string, mapp
         return { data, indicators };
     }, []); // fixed per trial mount
 
-    console.log(parameters.mapping);
-
     return (
         <Stack style={{ width: '100%', height: '100%' }}>
             <h3 className="trialHeader">Trial number:<span id="task-index"> {trialIndex}</span></h3>
