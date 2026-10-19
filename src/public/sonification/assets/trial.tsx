@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useMemo } from 'react';
 import { Center, Stack, Text, Group, Button } from '@mantine/core';
 import { range } from 'd3-array';
 import BarPlot from './barplot';

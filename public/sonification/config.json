@@ -58,7 +58,7 @@
     },
     "training": {
       "type": "react-component",
-      "path": "sonification/assets/04-training.tsx",
+      "path": "sonification/assets/03-training.tsx",
       "stylesheetPath": "sonification/assets/task.css",
       "parameters": {
         "taskid": "train"
@@ -85,17 +85,10 @@
         }
       ]
     },
-    "tutorial-1": {
+    "tutorial": {
       "type": "react-component",
-      "path": "sonification/assets/02-tutorial_1.tsx",
-      "parameters": {
-        "taskid": "test"
-      },
-      "response": []
-    },
-    "tutorial-2": {
-      "type": "react-component",
-      "path": "sonification/assets/03-tutorial_2.tsx",
+      "path": "sonification/assets/02-tutorial.tsx",
+      "stylesheetPath": "sonification/assets/task.css",
       "parameters": {
         "taskid": "test"
       },
@@ -126,7 +119,7 @@
             "min": 1,
             "max": 100
         }],
-        "correctAnswer": [{"id": "trainingProp-2", "answer": 50}], 
+        "correctAnswer": [{"id": "trainingProp-2", "answer": 50, "acceptableLow": 45, "acceptableHigh": 55}], 
         "helpTextPath": "incentives-dm/assets/help.md"
     }, 
     "training-3": {
@@ -140,7 +133,7 @@
             "min": 1,
             "max": 100
         }],
-        "correctAnswer": [{"id": "trainingProp-3", "answer": 60}], 
+        "correctAnswer": [{"id": "trainingProp-3", "answer": 60, "acceptableLow": 55, "acceptableHigh": 65}], 
         "helpTextPath": "incentives-dm/assets/help.md"
     }, 
     "training-4": {
@@ -154,7 +147,7 @@
             "min": 1,
             "max": 100
         }],
-        "correctAnswer": [{"id": "trainingProp-4", "answer": 90}], 
+        "correctAnswer": [{"id": "trainingProp-4", "answer": 90, "acceptableLow": 85, "acceptableHigh": 95}], 
         "helpTextPath": "incentives-dm/assets/help.md"
     }
   },
@@ -162,8 +155,7 @@
     "order": "fixed",
     "components": [
       "introduction",
-      "tutorial-1",
-      "tutorial-2",
+      "tutorial",
       {
         "id": "train",
         "order": "random",
