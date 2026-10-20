@@ -18,6 +18,8 @@ export default defineConfig(({ command, mode }) => {
         '@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs',
         // UpSet treats this peer as optional, but Vite still resolves its dynamic import during pre-bundling.
         '@trrack/vis-react': fileURLToPath(new URL('./src/shims/trrackVisReact.ts', import.meta.url)),
+        // erie-web's `exports.default` points to a browser IIFE with no ES exports; use its ESM build instead.
+        'erie-web': fileURLToPath(new URL('./node_modules/erie-web/build/erie-web-esm.js', import.meta.url)),
       },
     },
     test: {
