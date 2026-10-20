@@ -2,7 +2,8 @@ import { useRef } from 'react';
 import { Group, Button } from '@mantine/core';
 import { compileAudioGraph, SequenceStream } from 'erie-web';
 import { pitchPlot, pitchScales } from './erie/01-pitch';
-import { tapPlot, tapScales } from './erie/02-tapping';
+import { tapPlot } from './erie/02-tapping';
+import { playGeigerTone } from "./erie/geiger";
 
 const AUDIO_PLOTS = {
     pitch: pitchPlot,
@@ -26,7 +27,7 @@ export default function AudioPlot({data, mapping, indicators} : {
     const sonData = data.map((y, i) => ({index: i, y}));
     
     const play = async () => {
-        const spec = AUDIO_PLOTS[mapping](sonData, indicators, [MIN_DATA, MAX_DATA]);
+        const spec = await AUDIO_PLOTS[mapping](sonData, indicators, [MIN_DATA, MAX_DATA]);
 
         const stream = await compileAudioGraph(spec, {baseUrl: import.meta.env.BASE_URL}) as SequenceStream;
         streamRef.current = stream;
@@ -59,9 +60,15 @@ export default function AudioPlot({data, mapping, indicators} : {
         await streamRef.current?.stopQueue();
     };
 
+    // plays the rendered WAV that tapPlot uses as its tap sample
+    const playGeigerSample = async () => {
+        playGeigerTone();
+    };
+
     return (
         <Group>
             <Button onClick={play}>Play</Button>
+            <Button onClick={playGeigerSample} variant="light">Play Geiger Sample</Button>
             {/* <Button onClick={stop} variant="default">Stop</Button> */
             /* <Button onClick={playMin} variant="light">Play Min</Button>
             <Button onClick={playMax} variant="light">Play Max</Button> */}

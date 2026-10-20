@@ -2,12 +2,12 @@ import { useMemo } from 'react';
 import { Center, Stack, Text, Group, Button } from '@mantine/core';
 import { range } from 'd3-array';
 import BarPlot from './barplot';
-import AudioPlot from './sonification';
+import AudioPlot, { Mapping } from './sonification';
 // import Result from './responseFeedback';
 import { StimulusParams } from '../../../store/types';
 import { useNextStep } from '../../../store/hooks/useNextStep';
 
-export default function Task({parameters}: StimulusParams<{ taskid: string, mapping: string, prop: number }>) {
+export default function Task({parameters}: StimulusParams<{ taskid: string, mapping: Mapping, prop: number }>) {
     const trialIndex = 1;
     const prop = parameters.prop / 20;
     const n = 5;
