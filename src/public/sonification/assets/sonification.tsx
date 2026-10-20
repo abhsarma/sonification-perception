@@ -68,7 +68,7 @@ export default function AudioPlot({data, mapping, indicators} : {
     return (
         <Group>
             <Button onClick={play}>Play</Button>
-            <Button onClick={playGeigerSample} variant="light">Play Geiger Sample</Button>
+            {/* <Button onClick={playGeigerSample} variant="light">Play Geiger Sample</Button> */}
             {/* <Button onClick={stop} variant="default">Stop</Button> */
             /* <Button onClick={playMin} variant="light">Play Min</Button>
             <Button onClick={playMax} variant="light">Play Max</Button> */}

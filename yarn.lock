@@ -3356,9 +3356,10 @@ entities@^8.0.0:
   resolved "https://registry.npmjs.org/entities/-/entities-8.0.0.tgz"
   integrity sha512-zwfzJecQ/Uej6tusMqwAqU/6KL2XaB2VZ2Jg54Je6ahNBGNH6Ek6g3jjNCF0fG9EWQKGZNddNjU5F1ZQn/sBnA==
 
-"erie-web@github:see-mike-out/erie-web#patch-a":
-  version "1.0.2a"
-  resolved "git+ssh://git@github.com/see-mike-out/erie-web.git#be0f12c460034f3dd16c72ba0fdb30232a770a09"
+erie-web@^1.0.3:
+  version "1.0.3"
+  resolved "https://registry.npmjs.org/erie-web/-/erie-web-1.0.3.tgz"
+  integrity sha512-EMD+0MyX8psBC0vw2XeWURxWr9uiy1XzekPAlgD8DsHL3GurOxobV9rKt6ZdPPvAnCwiXScd9Il4pzBXj3gvnA==
   dependencies:
     arquero "^5.2.0"
     d3 "^7.8.4"
