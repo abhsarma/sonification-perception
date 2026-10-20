@@ -1,5 +1,7 @@
 import { useRef } from 'react';
 import { Group, Button } from '@mantine/core';
+
+// @ts-ignore
 import { compileAudioGraph, SequenceStream } from 'erie-web';
 import { pitchPlot, pitchScales } from './erie/01-pitch';
 import { tapPlot } from './erie/02-tapping';
@@ -33,8 +35,6 @@ export default function AudioPlot({data, mapping, indicators} : {
         streamRef.current = stream;
 
         const audioQueue = await stream.prerender();
-        console.log(audioQueue.queue[0]['overlays'][0]['sounds'].map(d => d.tap.pattern.length));
-        console.log(audioQueue.queue);
         await stream.playQueue();
     };
 

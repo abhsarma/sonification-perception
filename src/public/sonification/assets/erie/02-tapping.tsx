@@ -1,3 +1,4 @@
+// @ts-ignore
 import { TopLevelSpec } from 'erie-web';
 
 // const SCALE_TONE = "triangle"
