@@ -107,36 +107,43 @@ export function geigerPlot(
     return spec
 }
 
-// to implement
+// plays the domain endpoints with the same geiger sample and tap mapping as geigerPlot
 export function geigerScales(domain: Array<number>) {
     const data = domain.map((d, i) => ({index: i, y: d}));
+    const timeLength = data.length;
 
-    const spec: TopLevelSpec = {
+    // one STEP_SECONDS slot per value so the tapping windows don't overlap
+    const timeDomain: [number, number] = [0, timeLength - 1];
+    const timeRange: [number, number] = [0, STEP_SECONDS * (timeLength - 1)];
+
+    const spec = {
         config: { skipStartSpeech: true },
         data: { values: data },
-        tone: {type: SCALE_TONE, continued: false},
+        tone: {type: TAP_TONE, continued: false},
         encoding: {
             time: {
                 field: 'index',
                 type: 'quantitative',
-                scale: {length: 1, description: 'skip'},
+                scale: {domain: timeDomain, range: timeRange, length: timeLength, description: 'skip'},
             },
-            pitch: {
+            tapSpeed: {
                 field: 'y',
                 type: 'quantitative',
                 scale: {
                     domain: domain,
-                    range: range,
-                    polarity: 'positive',
-                    description: 'skip'
+                    range: domain.map(d => d / TAP_SECONDS),
+                    band: TAP_SECONDS,
+                    description: 'skip',
+                    pauseRate: 0.5
                 }
             }
         },
+        sampling,
         ordering: [{
             specifier: { role: 'sound', stream: { index: 0 } },
             notify: { beforePlay: false, afterPlay: false }
         }]
-    } as TopLevelSpec;
+    } as unknown as TopLevelSpec;
 
     return spec
 }
