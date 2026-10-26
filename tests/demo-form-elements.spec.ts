@@ -1,0 +1,554 @@
+/* eslint-disable no-await-in-loop */
+import { test, expect, Page } from '@playwright/test';
+import {
+  moveRankingItem,
+  nextClick,
+  readParticipantRecording,
+  readStoredComponentTiming,
+  seekReplay,
+  waitForStudyEndMessage,
+} from './utils';
+
+async function answerMatrixRadioRows(page: Page, responseId: string, rowCount: number) {
+  for (let row = 0; row < rowCount; row += 1) {
+    const rowRadios = page.locator(`input[type="radio"][name="radioInput${responseId}-${row}"]`);
+    await expect(rowRadios.first()).toBeVisible();
+    await rowRadios.first().click();
+  }
+}
+
+async function answerMatrixCheckboxRows(
+  page: Page,
+  responseId: string,
+  rowCount: number,
+  columnCount: number,
+  selectedColumns: number[] = [0],
+) {
+  const checkboxes = page.locator(`#${responseId} input[type="checkbox"]`);
+  await expect(checkboxes).toHaveCount(rowCount * columnCount);
+
+  for (let row = 0; row < rowCount; row += 1) {
+    for (let i = 0; i < selectedColumns.length; i += 1) {
+      const column = selectedColumns[i];
+      await checkboxes.nth((row * columnCount) + column).click();
+    }
+  }
+}
+
+function getTimePickerInputs(page: Page, responseId: string) {
+  return page.locator(`#${responseId} input:not([type="hidden"])`);
+}
+
+async function fillTimePicker(page: Page, responseId: string, value: string) {
+  const [hours, minutes, seconds] = value.split(':');
+  const inputs = getTimePickerInputs(page, responseId);
+  await expect(inputs).toHaveCount(seconds === undefined ? 2 : 3);
+  await inputs.nth(0).fill(hours);
+  await inputs.nth(1).fill(minutes);
+  if (seconds !== undefined) {
+    await inputs.nth(2).fill(seconds);
+  }
+}
+
+async function expectTimePickerValue(page: Page, responseId: string, value: string) {
+  const [hours, minutes, seconds] = value.split(':');
+  const inputs = getTimePickerInputs(page, responseId);
+  await expect(inputs).toHaveCount(seconds === undefined ? 2 : 3);
+  await expect(inputs.nth(0)).toHaveValue(hours);
+  await expect(inputs.nth(1)).toHaveValue(minutes);
+  if (seconds !== undefined) {
+    await expect(inputs.nth(2)).toHaveValue(seconds);
+  }
+}
+
+async function advanceToSidebarFormElements(page: Page) {
+  const sidebarAgeInput = page.locator('.sidebar input[data-path="q-numerical"]');
+
+  for (let i = 0; i < 3; i += 1) {
+    if (await sidebarAgeInput.isVisible().catch(() => false)) {
+      return sidebarAgeInput;
+    }
+
+    const nextButton = page.getByRole('button', { name: 'Next', exact: true });
+    const canAdvance = await nextButton.isVisible().catch(() => false)
+      && await nextButton.isEnabled().catch(() => false);
+    if (canAdvance) {
+      await nextClick(page).catch(() => { });
+      await page.waitForTimeout(150);
+    }
+  }
+
+  await expect(sidebarAgeInput).toBeVisible({ timeout: 20000 });
+  return sidebarAgeInput;
+}
+
+test('Test questionnaire component with responses and randomizing questions and responses', async ({ page }) => {
+  await page.setViewportSize({
+    width: 1400,
+    height: 900,
+  });
+
+  await page.goto('/');
+  await page.getByLabel('Demo Studies').locator('div').filter({ hasText: 'Form Elements Demo' })
+    .getByText('Go to Study')
+    .click();
+
+  const shortSidebarReplayPath = new URL(page.url()).pathname;
+  await nextClick(page);
+
+  // Fill the survey: Form Elements
+
+  // Delayed elements
+  const delayedNumberContainer = page.getByTestId('delay-wrapper-q-numerical-delayed');
+  const delayedSliderContainer = page.getByTestId('delay-wrapper-q-slider-delayed');
+
+  await expect(delayedNumberContainer).toBeVisible({ timeout: 10000 });
+  await expect(delayedNumberContainer).toHaveAttribute('inert');
+  await expect(delayedSliderContainer).toHaveAttribute('inert');
+
+  // Wait for the 5-second timer to expire (React completely removes the 'inert' attribute)
+  await expect(delayedNumberContainer).not.toHaveAttribute('inert', { timeout: 20000 });
+  await expect(delayedSliderContainer).not.toHaveAttribute('inert', { timeout: 20000 });
+
+  const delayedNumberInput = delayedNumberContainer.getByPlaceholder('Enter a number from 0 to 100');
+  const delayedSliderTrack = delayedSliderContainer.locator('.mantine-Slider-track');
+  await delayedNumberInput.fill('120');
+  await delayedNumberInput.press('Tab');
+  await nextClick(page);
+  await expect(page.getByText('Please enter a value between 0 and 100')).toBeVisible();
+  await delayedNumberInput.fill('12');
+  await delayedSliderTrack.click();
+
+  // Number input
+  const ageInput = page.locator('.main input[data-path="q-numerical"]');
+  await expect(ageInput).toBeVisible({ timeout: 10000 });
+  await ageInput.fill('120');
+  await ageInput.press('Tab');
+  await nextClick(page);
+  await expect(page.getByText('Please enter a value between 0 and 100')).toBeVisible();
+  await ageInput.fill('12');
+
+  // Slider
+  await page.locator('[data-question-id="q-slider"] .mantine-Slider-track').click();
+
+  // Short text
+  await page.getByPlaceholder('Enter your answer here').fill('test');
+
+  // Long text
+  await page.getByPlaceholder('Enter your long comments here').fill('test long text');
+
+  // Dropdown
+  await page.getByPlaceholder('Enter your preference').click();
+  await page.getByRole('option', { name: 'Bar', exact: true }).click();
+
+  // Multiselect dropdown
+  await page.getByPlaceholder('Enter your responses').click();
+  await page.getByRole('option', { name: 'Line', exact: true }).click();
+  const minDropdownSelectionsText = await page.getByText('Please select at least 2 options');
+  await expect(minDropdownSelectionsText).toBeVisible();
+  await page.getByRole('option', { name: 'Scatter', exact: true }).click();
+
+  // Country dropdown
+  const countryDropdown = page.getByPlaceholder('Select a country');
+  await countryDropdown.fill('United Sta');
+  await page.getByRole('option', { name: /United States$/ }).click();
+  await expect(countryDropdown).toHaveValue(/United States/);
+
+  // Vertical Checkbox
+  await page.getByRole('checkbox', { name: 'Option 2' }).nth(0).click();
+  const minSelectionsText = await page.getByText('Please select at least 2 options');
+  await expect(minSelectionsText).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Option 1' }).nth(0).click();
+  await page.getByRole('checkbox', { name: 'Option 3' }).nth(0).click();
+  const maxSelectionsText = await page.getByText('Please select at most 2 options');
+  await expect(maxSelectionsText).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Option 1' }).nth(0).click();
+
+  // Horizontal Checkbox
+  await page.getByRole('checkbox', { name: 'Option 2' }).nth(1).click();
+  await page.getByRole('checkbox', { name: 'Option 3' }).nth(1).click();
+
+  // Vertical Radio
+  await page.getByRole('radio', { name: 'Option 2' }).nth(0).click();
+
+  // Horizontal Radio
+  await page.getByRole('radio', { name: 'Option 2' }).nth(1).click();
+
+  // Button
+  await page.getByRole('radio', { name: 'Option 4' }).nth(0).click();
+
+  // Buttons with keymapping (Using configured key mapping)
+  await page.keyboard.press('r');
+
+  // Likert scale
+  await page.getByRole('radio', { name: '5' }).nth(0).click();
+
+  // Matrix radio
+  await answerMatrixRadioRows(page, 'q-multi-satisfaction', 3);
+
+  // Matrix checkbox
+  await answerMatrixCheckboxRows(page, 'multi-custom', 5, 3);
+
+  // Go to the next page
+  await nextClick(page);
+
+  // Conditional responses validate only while visible and clear when hidden.
+  const universityName = page.getByLabel('Name of University');
+  const graduationYear = page.getByLabel(/Graduation year$/);
+  await expect(page.getByRole('radio', { name: 'Yes', exact: true })).not.toBeChecked();
+  await expect(universityName).toHaveCount(0);
+  await page.getByRole('radio', { name: 'Yes', exact: true }).check();
+  await nextClick(page);
+  await expect(universityName).toHaveAttribute('aria-invalid', 'true');
+  const revisitBackground = page.getByLabel('How did you hear about reVISit?');
+  await expect(revisitBackground).toHaveCount(0);
+  await universityName.fill('University of Utah');
+  await expect(revisitBackground).toBeVisible();
+  await revisitBackground.fill('Through a university research project');
+  await universityName.fill('Another university');
+  await expect(revisitBackground).toHaveCount(0);
+  await universityName.fill('WPI');
+  await expect(revisitBackground).toHaveValue('');
+  await revisitBackground.fill('From a colleague at WPI');
+  await universityName.fill('WPI extension');
+  await expect(revisitBackground).toHaveCount(0);
+  await universityName.fill('University of Utah');
+  await expect(revisitBackground).toHaveValue('');
+  await revisitBackground.fill('Through a university research project');
+  await page.locator('#degreeProgram').getByRole('combobox').click();
+  await page.getByRole('option', { name: "Bachelor's degree", exact: true }).click();
+  await page.getByRole('radio', { name: 'Graduated', exact: true }).check();
+  await nextClick(page);
+  await expect(graduationYear).toHaveAttribute('aria-invalid', 'true');
+  const graduationSemester = page.locator('#graduationSemester').getByRole('combobox');
+  await graduationYear.fill('2020');
+  await expect(graduationSemester).toHaveCount(0);
+  await graduationYear.fill('2021');
+  await expect(graduationSemester).toBeVisible();
+  await nextClick(page);
+  await expect(graduationSemester).toHaveAttribute('aria-invalid', 'true');
+  await graduationSemester.click();
+  await page.getByRole('option', { name: 'Spring', exact: true }).click();
+  await graduationYear.fill('2020');
+  await expect(graduationSemester).toHaveCount(0);
+  await graduationYear.fill('2021');
+  await expect(graduationSemester).toHaveValue('');
+  await graduationSemester.click();
+  await page.getByRole('option', { name: 'Fall', exact: true }).click();
+  const expectedGraduationYear = page.getByLabel('Expected graduation year');
+  await page.getByRole('radio', { name: 'Currently enrolled', exact: true }).check();
+  await expect(graduationYear).toHaveCount(0);
+  await expect(graduationSemester).toHaveCount(0);
+  await expect(expectedGraduationYear).toBeVisible();
+  await expectedGraduationYear.fill('2028');
+  await page.getByRole('radio', { name: 'Graduated', exact: true }).check();
+  await expect(expectedGraduationYear).toHaveCount(0);
+  await expect(graduationYear).toHaveValue('');
+  await page.getByRole('radio', { name: 'Currently enrolled', exact: true }).check();
+  await expect(expectedGraduationYear).toHaveValue('');
+  await page.getByRole('radio', { name: 'Graduated', exact: true }).check();
+  await graduationYear.fill('2020');
+  await page.getByRole('radio', { name: 'No', exact: true }).check();
+  await expect(universityName).toHaveCount(0);
+  await expect(graduationYear).toHaveCount(0);
+  await page.getByRole('radio', { name: 'Yes', exact: true }).check();
+  await expect(universityName).toHaveValue('');
+  await expect(page.getByRole('radio', { name: 'Graduated', exact: true })).not.toBeChecked();
+  await page.getByRole('radio', { name: 'Graduated', exact: true }).check();
+  await expect(graduationYear).toHaveValue('');
+  await page.getByRole('radio', { name: 'No', exact: true }).check();
+  await nextClick(page);
+  await expect.poll(async () => (
+    await readParticipantRecording(page, 'demo-form-elements', 'Conditional Responses_2')
+  )?.answer).toEqual({ conditionalTitle: '', attendedUniversity: 'no' });
+
+  // Go to the next page
+  await nextClick(page);
+
+  // Fill the survey: Text Validation
+  await expect(page.getByText('Text Validation', { exact: true })).toBeVisible();
+  const textValidationReplayPath = new URL(page.url()).pathname;
+  const regexInput = page.getByPlaceholder('ABC-123');
+  await regexInput.fill('^[A-Z]{3}-\\d{3}$');
+  await nextClick(page);
+  await expect(
+    page.getByText('Please enter a value that matches the required format.'),
+  ).toBeVisible();
+  await regexInput.fill('ABC-123');
+  await page.getByPlaceholder('Share your feedback...').fill('ReVISit is great');
+  await page.getByPlaceholder('ReVISit', { exact: true }).fill('ReVISit');
+  const characterLengthInput = page.getByPlaceholder('3–10 characters');
+  const wordLengthInput = page.getByPlaceholder('4–10 words');
+  await characterLengthInput.fill('no');
+  await wordLengthInput.fill('only three words');
+  await page.getByPlaceholder('test@revisit.dev').fill('test@revisit.dev');
+  await page.locator('#built-in-validation-phone-number input').fill('+800-000-0000');
+  await page.locator('#built-in-validation-us-phone-number input').fill('800-000-0000');
+  await page.getByPlaceholder('https://revisit.dev').fill('https://revisit.dev');
+  await page.getByLabel('Date within a range.').fill('06/24/2026');
+  await page.locator('#month-picker-response [data-dates-input]').click();
+  await page.getByRole('button', { name: 'Jul', exact: true }).click();
+  await page.locator('#year-picker-response [data-dates-input]').click();
+  await page.getByRole('button', { name: '2027', exact: true }).click();
+  await fillTimePicker(page, 'time-standard-response', '14:28');
+  await fillTimePicker(page, 'time-range-response', '14:28');
+  await fillTimePicker(page, 'time-seconds-response', '14:28:30');
+  const twelveHourInputs = getTimePickerInputs(page, 'time-12-hour-response');
+  await expect(twelveHourInputs).toHaveCount(3);
+  await expect(twelveHourInputs.nth(0)).toHaveValue('02');
+  await expect(twelveHourInputs.nth(1)).toHaveValue('28');
+  await expect(twelveHourInputs.nth(2)).toHaveValue('PM');
+  await nextClick(page);
+  await expect(page.getByText('Please enter between 3 and 10 characters.')).toBeVisible();
+  await expect(page.getByText('Please enter between 4 and 10 words.')).toBeVisible();
+  await characterLengthInput.fill('valid');
+  await wordLengthInput.fill('This has four words');
+  await nextClick(page);
+
+  // Default Values should be fully answerable via defaults
+  await expect(page.getByText('Default Values Demo')).toBeVisible();
+  await expect(page.getByLabel('Date default')).toHaveValue('06/24/2026');
+  await expect(page.locator('#default-month [data-dates-input]')).toHaveText('06/2026');
+  await expect(page.locator('#default-year [data-dates-input]')).toHaveText('2026');
+  await expectTimePickerValue(page, 'default-time', '14:28:30');
+  await expect(page.getByPlaceholder('Select a country')).toHaveValue(/United States/);
+  await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeEnabled();
+  await nextClick(page);
+
+  // Custom Response page
+  await expect(page.getByText('Custom Response')).toBeVisible();
+  const customResponseNextButton = page.getByRole('button', { name: 'Next', exact: true });
+  const checkCustomResponseButton = page.getByRole('button', { name: 'Check Answer', exact: true });
+  await expect(page.getByText('Pick a chart type and set your confidence.')).toBeVisible();
+  const scoreNumberInput = page.getByPlaceholder('Enter a number from 0 to 10');
+  await expect(page.getByText('How close can you get to 10? Enter a whole number. Try 5.5 for a custom validation error, 5 for 50% credit, then 10 for full credit.')).toBeVisible();
+  await expect(customResponseNextButton).toBeDisabled();
+  await page.getByRole('button', { name: 'Bar', exact: true }).click();
+  await checkCustomResponseButton.click();
+  await expect(page.getByText('Set confidence to at least 70 to continue.')).toBeVisible();
+  await page.getByLabel('Confidence').fill('80');
+  await page.getByLabel('Rationale').fill('Useful for comparing categories');
+  await scoreNumberInput.fill('5.5');
+  await checkCustomResponseButton.click();
+  await expect(page.getByText('Enter a whole number.', { exact: true })).toBeVisible();
+  await scoreNumberInput.fill('5');
+  await expect(page.getByText('"chartType":"Bar"')).toBeVisible();
+  await checkCustomResponseButton.click();
+  await expect(page.getByText(/You scored 50% on this question/)).toBeVisible();
+  await scoreNumberInput.fill('10');
+  await checkCustomResponseButton.click();
+  await expect(page.getByText('You have answered the question correctly.')).toBeVisible();
+  await expect(customResponseNextButton).toBeEnabled();
+  await nextClick(page);
+
+  // Fill the survey: Randomizing Options
+
+  // Matrix radio
+  await answerMatrixRadioRows(page, 'q-multi-satisfaction', 3);
+
+  // Matrix checkbox
+  await answerMatrixCheckboxRows(page, 'multi-custom', 3, 3);
+
+  // Vertical Checkbox
+  await page.getByRole('checkbox', { name: 'Option 2' }).nth(0).click();
+  await page.getByRole('checkbox', { name: 'Option 3' }).nth(0).click();
+
+  // Horizontal Checkbox
+  await page.getByRole('checkbox', { name: 'Option 2' }).nth(1).click();
+  await page.getByRole('checkbox', { name: 'Option 3' }).nth(1).click();
+
+  // Vertical Radio
+  await page.getByRole('radio', { name: 'Option 4' }).nth(0).click();
+
+  // Horizontal Radio
+  await page.getByRole('radio', { name: 'Option 4' }).nth(1).click();
+
+  // Button
+  await page.getByRole('radio', { name: 'Option 4' }).nth(2).click();
+
+  // Go to the next page
+  await nextClick(page);
+
+  // Fill the survey: Randomizing Questions
+
+  // Dropdown
+  await page.getByPlaceholder('Select an option').click();
+  await page.getByRole('option', { name: 'Option 1', exact: true }).click();
+
+  // Likert
+  await page.getByRole('radio', { name: '5' }).nth(0).click();
+
+  // Short text
+  await page.getByPlaceholder('Enter your answer here').fill('test');
+
+  // Radio
+  await page.getByRole('radio', { name: 'Option 2' }).nth(0).click();
+
+  // Slider
+  await page.locator('.mantine-Slider-track').click();
+
+  // Go to the next page
+  await nextClick(page);
+
+  // Ranking Widgets
+  // Go to the next page
+  await nextClick(page);
+
+  // Fill the survey: Sidebar Form Elements
+
+  // Number input
+  const sidebarAgeInput = await advanceToSidebarFormElements(page);
+  const sidebarReplayPath = new URL(page.url()).pathname;
+  const sidebar = page.locator('.sidebar');
+  await expect(sidebar).toBeVisible();
+  expect(await sidebar.evaluate((element) => getComputedStyle(element).overflowY)).not.toBe('auto');
+
+  await sidebarAgeInput.fill('120');
+  await sidebarAgeInput.press('Tab');
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByText('Please enter a value between 0 and 100')).toBeVisible();
+  await sidebarAgeInput.fill('12');
+
+  // Slider
+  await page.locator('.mantine-Slider-track').click();
+
+  // Short text
+  await page.getByPlaceholder('Enter your answer here').fill('test');
+
+  // Long text
+  await page.getByPlaceholder('Enter your long comments here').fill('test long text');
+
+  // Dropdown
+  await page.getByPlaceholder('Enter your preference').click();
+  await page.getByRole('option', { name: 'Bar', exact: true }).click();
+
+  // Multiselect dropdown
+  await page.getByPlaceholder('Enter your responses').click();
+  await page.getByRole('option', { name: 'Line', exact: true }).click();
+  await page.getByRole('option', { name: 'Scatter', exact: true }).click();
+
+  // Vertical Checkbox
+  await page.getByRole('checkbox', { name: 'Option 2' }).nth(0).click();
+  await page.getByRole('checkbox', { name: 'Option 1' }).nth(0).click();
+
+  // Vertical Radio
+  await page.getByRole('radio', { name: 'Option 2' }).nth(0).click();
+
+  // Button
+  await page.getByRole('radio', { name: 'Option 1' }).nth(1).click();
+
+  // Likert scale
+  await page.getByRole('radio', { name: '5' }).nth(0).click();
+
+  // Go to the next page
+  await nextClick(page);
+
+  // Answer Feedback: submit a complete but incorrect set, then correct it.
+  await page.getByRole('checkbox', { name: 'A', exact: true }).check();
+  await page.getByRole('checkbox', { name: 'C', exact: true }).check();
+  await page.getByRole('checkbox', { name: '4', exact: true }).check();
+  const matrixCheckboxes = page.locator('#checkbox-matrix input[type="checkbox"]');
+  await expect(matrixCheckboxes).toHaveCount(20);
+  for (let row = 0; row < 5; row += 1) {
+    await matrixCheckboxes.nth(row * 4).check();
+  }
+
+  const colorInput = page.locator('#dropdown-set input:not([type="hidden"])');
+  const yellow = page.getByRole('option', { name: 'Yellow' });
+  await colorInput.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(yellow).toBeVisible();
+  await page.getByRole('option', { name: 'Red' }).click();
+  await page.getByRole('option', { name: 'Green' }).click();
+  await page.keyboard.press('Escape');
+  await moveRankingItem(page, 'A', 'available', 'selected');
+  await moveRankingItem(page, 'C', 'available', 'selected');
+  const checkAnswer = page.getByRole('button', { name: 'Check Answer', exact: true });
+  await checkAnswer.click();
+  await expect(page.getByRole('alert')).toHaveCount(5);
+
+  await page.getByRole('checkbox', { name: 'A', exact: true }).uncheck();
+  await page.getByRole('checkbox', { name: 'C', exact: true }).uncheck();
+  await page.getByRole('checkbox', { name: 'C', exact: true }).check();
+  await page.getByRole('checkbox', { name: 'D', exact: true }).check();
+  for (const option of ['-4', '|4|', '16/4']) {
+    await page.getByRole('checkbox', { name: option, exact: true }).check();
+  }
+  const acceptedTraits = [[1, 2], [1, 2], [1, 2], [1, 2, 3], [0, 2]];
+  await page.locator('#checkbox-matrix').getByRole('button', { name: 'Clear selection' }).click();
+  for (let row = 0; row < acceptedTraits.length; row += 1) {
+    for (const column of acceptedTraits[row]) {
+      await matrixCheckboxes.nth((row * 4) + column).check();
+    }
+  }
+  await colorInput.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(yellow).toBeVisible();
+  await page.getByRole('option', { name: 'Red' }).click();
+  await yellow.click();
+  await page.keyboard.press('Escape');
+  await expect(yellow).toBeHidden();
+  await moveRankingItem(page, 'C', 'selected', 'available');
+  await moveRankingItem(page, 'B', 'available', 'selected');
+  await checkAnswer.click();
+  await expect(page.getByRole('alert')).toHaveCount(5);
+  await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeEnabled();
+  await nextClick(page);
+
+  // Check that the thank you message is displayed
+  await waitForStudyEndMessage(page);
+
+  await expect.poll(() => readStoredComponentTiming(page, 'Text Validation')).not.toBeNull();
+  const textValidationTiming = await readStoredComponentTiming(page, 'Text Validation');
+  await expect.poll(() => readStoredComponentTiming(page, 'Sidebar Form Elements')).not.toBeNull();
+  const sidebarTiming = await readStoredComponentTiming(page, 'Sidebar Form Elements');
+  if (!textValidationTiming || !sidebarTiming) {
+    throw new Error('Form element timing was not stored');
+  }
+
+  const replaySearch = `participantId=${encodeURIComponent(sidebarTiming.participantId)}&revisitPageId=e2e-sidebar-replay`;
+  await page.goto(`${textValidationReplayPath}?${replaySearch}`);
+  await expect(page.getByRole('button', { name: 'Play' })).toBeVisible();
+  await seekReplay(
+    page,
+    textValidationTiming.startTime,
+    textValidationTiming.endTime,
+    textValidationTiming.endTime,
+  );
+  await expect(page.getByLabel('Date within a range.')).toHaveValue('06/24/2026');
+  await expect(page.locator('#month-picker-response [data-dates-input]')).toHaveText('07/2026');
+  await expect(page.locator('#year-picker-response [data-dates-input]')).toHaveText('2027');
+  await expectTimePickerValue(page, 'time-seconds-response', '14:28:30');
+
+  await page.goto(`${sidebarReplayPath}?${replaySearch}`);
+  await expect(page.getByRole('button', { name: 'Play' })).toBeVisible();
+
+  const replaySidebar = page.locator('.sidebar');
+  const replayFooter = page.locator('footer');
+  await expect(replaySidebar).toBeVisible();
+  expect(await replaySidebar.evaluate((element) => getComputedStyle(element).overflowY)).not.toBe('auto');
+  await page.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  });
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  expect(await replaySidebar.evaluate((element) => element.scrollTop)).toBe(0);
+
+  const replaySidebarBox = await replaySidebar.boundingBox();
+  const replayFooterBox = await replayFooter.boundingBox();
+  expect(replaySidebarBox).not.toBeNull();
+  expect(replayFooterBox).not.toBeNull();
+  expect((replaySidebarBox?.y ?? 0) + (replaySidebarBox?.height ?? 0))
+    .toBeLessThanOrEqual((replayFooterBox?.y ?? 0) + 1);
+
+  await page.goto(`${shortSidebarReplayPath}?${replaySearch}`);
+  await expect(page.getByRole('button', { name: 'Play' })).toBeVisible();
+  const shortSidebar = page.locator('.sidebar');
+  await expect(shortSidebar).toBeVisible();
+  const shortSidebarLayout = await shortSidebar.evaluate((element) => ({
+    alignSelf: getComputedStyle(element).alignSelf,
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(shortSidebarLayout.alignSelf).not.toBe('flex-start');
+  expect(shortSidebarLayout.scrollHeight).toBeLessThanOrEqual(shortSidebarLayout.clientHeight);
+});
