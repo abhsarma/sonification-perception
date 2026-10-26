@@ -1,5 +1,5 @@
-import { useRef } from 'react';
-import { Group, Button } from '@mantine/core';
+import { useEffect, useRef, useState } from 'react';
+import { Group, Button, VisuallyHidden } from '@mantine/core';
 
 // @ts-ignore
 import { compileAudioGraph, SequenceStream, TopLevelSpec, ConfigInterface } from 'erie-web';
@@ -23,6 +23,8 @@ const AUDIO_SCALES = {
     duration: durationScales,
 } as const;
 
+let isSequencePlaying = false;
+
 // // erie-web 1.0.3's setPlayerEvents only creates this map for the first player id
 // // it sees, so playing any later stream throws "reading 'set'". Remove once fixed upstream.
 // function ensureErieEventMap(playerId: string) {
@@ -41,31 +43,57 @@ async function createErieStream(spec: TopLevelSpec, options: ConfigInterface = {
 
 export type Mapping = keyof typeof AUDIO_PLOTS; // "pitch" | "tapping" | "loudness" | "duration"
 
-export default function AudioPlot({data, mapping, indicators} : {
+export default function AudioPlot({data, mapping, indicators, label = "Play"} : {
     data: Array<number>, 
     mapping: Mapping, 
-    indicators: Array<number> 
+    indicators: Array<number>,
+    label?: string
 }) {
+    const streamRef = useRef<SequenceStream | null>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [status, setStatus] = useState('');
+
     const MIN_DATA = 0;
     const MAX_DATA = 100;
-
-    const streamRef = useRef<SequenceStream | null>(null);
 
     // Both overlay streams share the same time domain/range so the marker
     // stream's events line up with the corresponding bar in the data stream.
     const sonData = data.map((y, i) => ({index: i, y}));
 
+    // useEffect(() => {
+    //     return () => {
+    //         streamRef.current?.stopQueue();
+    //         // cancel erie's spoken "Stopped." (speechSynthesis)
+    //         window.speechSynthesis?.cancel();
+    //         setTimeout(() => window.speechSynthesis?.cancel(), 50);
+    //         isSequencePlaying = false;
+    //     };
+    // }, []);
+
     
     const play = async () => {
-        const spec = await AUDIO_PLOTS[mapping](sonData, indicators, [MIN_DATA, MAX_DATA]);
+        if (isSequencePlaying) return;
+        isSequencePlaying = true;
+        setIsPlaying(true);
+        setStatus('');
 
-        const stream = await createErieStream(spec);
-        streamRef.current = stream;
+        try {
+            const spec = await AUDIO_PLOTS[mapping](sonData, indicators, [MIN_DATA, MAX_DATA]);
 
-        await stream.prerender(); // required for the console output
-        console.log(stream.queue?.queue[0].overlays);
+            const stream = await createErieStream(spec);
+            streamRef.current = stream;
 
-        await stream.playQueue();
+            await stream.prerender(); // required for the console output
+
+            // @ts-expect-error overlays only exists on overlay queue items
+            console.log(stream.queue?.queue[0].overlays);
+
+            await stream.playQueue();
+        } finally {
+            isSequencePlaying = false;
+            setIsPlaying(false);
+            setStatus('Finished');
+        }
     };
 
     const playScales = async () => {
@@ -79,6 +107,11 @@ export default function AudioPlot({data, mapping, indicators} : {
 
     const stop = async () => {
         await streamRef.current?.stopQueue();
+        window.speechSynthesis?.cancel();
+        setTimeout(() => window.speechSynthesis?.cancel(), 50);
+
+        isSequencePlaying = false;
+        setIsPlaying(false);
     };
 
     // plays the rendered WAV that tapPlot uses as its tap sample
@@ -88,9 +121,9 @@ export default function AudioPlot({data, mapping, indicators} : {
 
     return (
         <Group>
-            <Button onClick={play}>Play</Button>
-            {/* <Button onClick={playGeigerSample} variant="light">Play Geiger Sample</Button> 
-            <Button onClick={stop} variant="default">Stop</Button>*/}
+            <Button onClick={play}>{isPlaying ? 'Playing' : 'Play'}</Button>
+            <VisuallyHidden role="status" aria-live="polite">{status}</VisuallyHidden>
+            <Button onClick={stop} variant="default">Stop</Button>
             <Button onClick={playScales} variant="light">Play Scales</Button>
         </Group>
     );

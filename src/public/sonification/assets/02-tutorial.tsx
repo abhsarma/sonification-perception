@@ -43,7 +43,7 @@ export default function Task({parameters}: StimulusParams<{ taskid: string, mapp
                     <BarPlot data={data} indicators={indicators} />
                 </Center>
                 <Center>
-                    <AudioPlot data={data} mapping={exampleMapping} indicators={indicators} />
+                    <AudioPlot data={data} mapping={exampleMapping} indicators={indicators}  label="Play example"/>
                 </Center>
                 <Text>
                     In the previous sonification, the markers were played before the second and fourth data points. Thus, you need to compare the pitch for the second and fourth data points.
@@ -52,22 +52,22 @@ export default function Task({parameters}: StimulusParams<{ taskid: string, mapp
                 <Text>
                     The data values in the sonification below are 1 and 100 respectively. These are the minimum and maximum values (and thus pitch) that you will be hear.
                 </Text>
-                <AudioPlot data={dataA} mapping={exampleMapping} indicators={[]} />
+                <AudioPlot data={dataA} mapping={exampleMapping} indicators={[]}  label="Play lowest and highest tone"/>
                 <h3 className="trialHeader">How to Compare Values: example #1</h3>
                 <Text>
                     In this study, you will be asked to estimate the ratio of the sound encoding the smaller value to the sound encoding the larger value as a percentage. For instance, take the following sonification
                 </Text>
-                <AudioPlot data={dataB} mapping={exampleMapping} indicators={[]} />
+                <AudioPlot data={dataB} mapping={exampleMapping} indicators={[]}  label="Play example 1"/>
                 <Text>
                     The data values in the previous sonification were 10 and 20. The ratio of the smaller value (10) relative to the larger value (20) is 0.5. Thus, the answer we are looking for is 50%.
                 </Text>
                 <h3 className="trialHeader">How to Compare Values: example #2</h3>
-                <AudioPlot data={dataC} mapping={exampleMapping} indicators={[]} />
+                <AudioPlot data={dataC} mapping={exampleMapping} indicators={[]}  label="Play example 2"/>
                 <Text>
                     The data values in the previous sonification were 70 and 100. The correct answer is 70%.
                 </Text>
                 <h3 className="trialHeader">How to Compare Values: example #3</h3>
-                <AudioPlot data={dataD} mapping={exampleMapping} indicators={[]} />
+                <AudioPlot data={dataD} mapping={exampleMapping} indicators={[]}  label="Play example 3"/>
                 <Text>
                     The data values in the previous sonification were 21 and 70. The correct answer is 30%.
                 </Text>
